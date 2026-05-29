@@ -26,6 +26,23 @@ def _map_to_timeline(t: float, keep_segments) -> float:
     return cum
 
 
+def _stage_media(video_path: str, draft_path: str) -> str:
+    """캡컷(맥)은 샌드박스라 컨테이너 밖 경로(~/projects 등)의 원본을 못 읽음
+    ('파일에 액세스할 수 없음'). 드래프트 폴더(=캡컷이 직접 쓰는 접근 가능 영역) 안으로
+    미디어를 반입해 그 경로를 참조한다. 같은 볼륨이면 하드링크(복사 비용 0), 아니면 복사.
+    """
+    dest = os.path.join(draft_path, os.path.basename(video_path))
+    if os.path.abspath(dest) == os.path.abspath(video_path):
+        return dest
+    if os.path.exists(dest):
+        os.remove(dest)
+    try:
+        os.link(video_path, dest)
+    except OSError:
+        shutil.copy(video_path, dest)
+    return dest
+
+
 def _finalize_draft(draft_path: str) -> None:
     """pycapcut가 안 채우는 캡컷 8.x 필수 항목 보정.
 
@@ -90,9 +107,11 @@ def build_jumpcut_draft(
     script = folder.create_draft(
         draft_name, width, height, fps=int(round(fps)), allow_replace=True
     )
+    draft_path = os.path.join(draft_root, draft_name)
+    staged = _stage_media(video_path, draft_path)
     script.add_track(c.TrackType.video)
 
-    material = c.VideoMaterial(video_path)
+    material = c.VideoMaterial(staged)
     timeline = 0.0
     for s, e in keep_segments:
         dur = e - s
@@ -111,6 +130,5 @@ def build_jumpcut_draft(
 
     script.save()
 
-    draft_path = os.path.join(draft_root, draft_name)
     _finalize_draft(draft_path)
     return draft_path

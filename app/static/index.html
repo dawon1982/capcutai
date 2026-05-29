@@ -110,6 +110,23 @@
   .open-hint { font-size: 12px; color: var(--muted); margin-top: 12px; }
   .open-hint b { color: var(--text); font-weight: 500; }
 
+  .kmeta { color: var(--dim); font-weight: 400; }
+  .chip.script {
+    font-family: -apple-system, system-ui, "Apple SD Gothic Neo", sans-serif;
+    line-height: 1.7; max-height: 168px; overflow-y: auto;
+    white-space: pre-wrap; word-break: normal;
+  }
+  .ng-item {
+    display: flex; gap: 10px; padding: 8px 0;
+    border-top: 1px solid var(--line); font-size: 12px;
+  }
+  .ng-item:first-child { border-top: 0; }
+  .ng-item .t {
+    font-family: var(--mono); color: var(--green);
+    font-variant-numeric: tabular-nums; flex: 0 0 auto;
+  }
+  .ng-item .x { color: var(--muted); }
+
   .err { padding: 16px 18px; color: #ef4444; font-family: var(--mono); font-size: 12px; display: none; }
   .err.show { display: block; }
 
@@ -150,6 +167,16 @@
         <div class="stat"><div id="r-in" class="v">–</div><div class="k">입력</div></div>
         <div class="stat"><div id="r-out" class="v green">–</div><div class="k">출력</div></div>
         <div class="stat"><div id="r-cut" class="v">–</div><div class="k">컷</div></div>
+      </div>
+      <hr />
+      <div class="draftrow">
+        <div class="k">대본 <span id="r-meta" class="kmeta"></span></div>
+        <div id="r-transcript" class="chip script">–</div>
+      </div>
+      <div id="ng-row" class="draftrow" style="display:none">
+        <hr style="margin:0 0 16px" />
+        <div class="k">NG 의심 — 표시만, 자동 컷 안 함</div>
+        <div id="ng-list"></div>
       </div>
       <hr />
       <div class="draftrow">
@@ -218,8 +245,37 @@ function showResult(r) {
   document.getElementById('r-out').textContent = r.output_sec + 's';
   document.getElementById('r-cut').textContent = '−' + r.cut_sec + 's';
   document.getElementById('r-name').textContent = r.draft_name;
+
+  document.getElementById('r-transcript').textContent = r.transcript || '(인식된 음성 없음)';
+  document.getElementById('r-meta').textContent =
+    `세그먼트 ${r.n_segments} · 잔말 컷 ${r.n_filler}`;
+
+  const ng = r.ng || [];
+  if (ng.length) {
+    const list = document.getElementById('ng-list');
+    list.innerHTML = '';
+    ng.forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'ng-item';
+      const t = document.createElement('span');
+      t.className = 't';
+      t.textContent = fmtTime(c.start) + '–' + fmtTime(c.end);
+      const x = document.createElement('span');
+      x.className = 'x';
+      x.textContent = c.text;
+      row.append(t, x);
+      list.append(row);
+    });
+    document.getElementById('ng-row').style.display = 'block';
+  }
   resultEl.classList.add('show');
   resetEl.style.display = 'block';
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  const ss = (s % 60).toFixed(1).padStart(4, '0');
+  return m + ':' + ss;
 }
 
 function showError(msg) {
