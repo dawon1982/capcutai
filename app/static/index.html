@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>캡컷 에이전트</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --card: #161616;
+    --line: #262626;
+    --text: #e5e5e5;
+    --muted: #737373;
+    --dim: #3f3f46;
+    --green: #22c55e;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, system-ui, "Apple SD Gothic Neo", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    justify-content: center;
+    padding: 64px 24px;
+  }
+  .wrap { width: 100%; max-width: 560px; }
+  header { margin-bottom: 32px; }
+  h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .sub b { color: var(--green); font-weight: 500; }
+
+  .drop {
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    padding: 40px 24px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color .15s, background .15s, color .15s;
+    background: var(--card);
+  }
+  .drop:hover { border-color: var(--dim); }
+  .drop.over { border-color: var(--green); color: var(--text); background: #14201a; }
+  .drop .big { font-size: 14px; color: var(--text); margin-bottom: 6px; }
+  .drop .hint { font-size: 12px; }
+  .drop .file { font-family: var(--mono); font-size: 12px; color: var(--green); margin-top: 10px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-top: 20px;
+    overflow: hidden;
+  }
+  .card.hidden, .drop.hidden { display: none; }
+
+  .steps { padding: 8px 4px; }
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+  }
+  .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--dim);
+    flex: 0 0 auto;
+    transition: background .2s, box-shadow .2s;
+  }
+  .step.running .dot { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1s ease-in-out infinite; }
+  .step.done .dot { background: var(--green); }
+  .step.skipped .dot { background: var(--dim); }
+  .step.error .dot { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .step .label { flex: 1; color: var(--muted); transition: color .2s; }
+  .step.running .label, .step.done .label { color: var(--text); }
+  .step .state { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .step.done .state { color: var(--green); }
+
+  .result { display: none; }
+  .result.show { display: block; }
+  hr { border: 0; border-top: 1px solid var(--line); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .stat { padding: 18px; text-align: center; }
+  .stat + .stat { border-left: 1px solid var(--line); }
+  .stat .v { font-family: var(--mono); font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .stat .k { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .stat .v.green { color: var(--green); }
+
+  .draftrow { padding: 16px 18px; }
+  .draftrow .k { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text);
+    word-break: break-all;
+  }
+  .open-hint { font-size: 12px; color: var(--muted); margin-top: 12px; }
+  .open-hint b { color: var(--text); font-weight: 500; }
+
+  .err { padding: 16px 18px; color: #ef4444; font-family: var(--mono); font-size: 12px; display: none; }
+  .err.show { display: block; }
+
+  .reset { margin-top: 16px; text-align: center; }
+  .reset button {
+    background: transparent; border: 1px solid var(--line); color: var(--muted);
+    font-size: 12px; padding: 8px 16px; border-radius: 6px; cursor: pointer;
+    font-family: inherit;
+  }
+  .reset button:hover { border-color: var(--dim); color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>캡컷 에이전트</h1>
+    <div class="sub">토킹 영상 → 무음 제거 <b>캡컷 드래프트</b>. AI 자동 / 사람 손 경계.</div>
+  </header>
+
+  <div id="drop" class="drop">
+    <div class="big">영상을 여기로 드래그</div>
+    <div class="hint">또는 클릭해서 선택 · mp4 / mov</div>
+    <div id="filename" class="file"></div>
+    <input id="file" type="file" accept=".mp4,.mov,.m4v,video/mp4,video/quicktime" hidden />
+  </div>
+
+  <div id="panel" class="card hidden">
+    <div class="steps">
+      <div class="step" data-step="silence"><span class="dot"></span><span class="label">무음 검출</span><span class="state"></span></div>
+      <div class="step" data-step="asr"><span class="dot"></span><span class="label">음성 인식</span><span class="state"></span></div>
+      <div class="step" data-step="filler"><span class="dot"></span><span class="label">잔말·NG</span><span class="state"></span></div>
+      <div class="step" data-step="draft"><span class="dot"></span><span class="label">드래프트 + 자막</span><span class="state"></span></div>
+    </div>
+    <div id="err" class="err"></div>
+    <div id="result" class="result">
+      <hr />
+      <div class="grid">
+        <div class="stat"><div id="r-in" class="v">–</div><div class="k">입력</div></div>
+        <div class="stat"><div id="r-out" class="v green">–</div><div class="k">출력</div></div>
+        <div class="stat"><div id="r-cut" class="v">–</div><div class="k">컷</div></div>
+      </div>
+      <hr />
+      <div class="draftrow">
+        <div class="k">캡컷 드래프트</div>
+        <div id="r-name" class="chip">–</div>
+        <div class="open-hint">캡컷을 <b>완전히 종료 후 다시 열면</b> 목록에 나타납니다. 재생해서 직접 확인하세요.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="reset" class="reset" style="display:none">
+    <button onclick="location.reload()">새 영상 처리</button>
+  </div>
+</div>
+
+<script>
+const dropEl = document.getElementById('drop');
+const fileEl = document.getElementById('file');
+const panel = document.getElementById('panel');
+const resultEl = document.getElementById('result');
+const errEl = document.getElementById('err');
+const resetEl = document.getElementById('reset');
+
+const STATE_LABEL = { running: '처리 중', done: '완료', skipped: '건너뜀', error: '오류' };
+
+dropEl.addEventListener('click', () => fileEl.click());
+fileEl.addEventListener('change', () => { if (fileEl.files[0]) start(fileEl.files[0]); });
+['dragenter','dragover'].forEach(e => dropEl.addEventListener(e, ev => { ev.preventDefault(); dropEl.classList.add('over'); }));
+['dragleave','drop'].forEach(e => dropEl.addEventListener(e, ev => { ev.preventDefault(); dropEl.classList.remove('over'); }));
+dropEl.addEventListener('drop', ev => { const f = ev.dataTransfer.files[0]; if (f) start(f); });
+
+function setStep(step, status) {
+  const el = document.querySelector(`.step[data-step="${step}"]`);
+  if (!el) return;
+  el.classList.remove('running','done','skipped','error');
+  el.classList.add(status);
+  el.querySelector('.state').textContent = STATE_LABEL[status] || '';
+}
+
+async function start(file) {
+  document.getElementById('filename').textContent = file.name;
+  const fd = new FormData();
+  fd.append('file', file);
+  let res;
+  try {
+    res = await fetch('/api/upload', { method: 'POST', body: fd });
+  } catch (e) { return showError('업로드 실패: ' + e.message); }
+  if (!res.ok) { const t = await res.text(); return showError(safeMsg(t)); }
+  const { job_id } = await res.json();
+
+  dropEl.classList.add('hidden');
+  panel.classList.remove('hidden');
+
+  const es = new EventSource('/api/stream/' + job_id);
+  es.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    if (ev.step === 'error') { showError(ev.message); es.close(); return; }
+    if (ev.step === 'result') { showResult(ev.result); es.close(); return; }
+    setStep(ev.step, ev.status);
+  };
+  es.onerror = () => { es.close(); };
+}
+
+function showResult(r) {
+  document.getElementById('r-in').textContent = r.input_sec + 's';
+  document.getElementById('r-out').textContent = r.output_sec + 's';
+  document.getElementById('r-cut').textContent = '−' + r.cut_sec + 's';
+  document.getElementById('r-name').textContent = r.draft_name;
+  resultEl.classList.add('show');
+  resetEl.style.display = 'block';
+}
+
+function showError(msg) {
+  errEl.textContent = msg;
+  errEl.classList.add('show');
+  panel.classList.remove('hidden');
+  dropEl.classList.add('hidden');
+  resetEl.style.display = 'block';
+}
+
+function safeMsg(t) {
+  try { return JSON.parse(t).detail || t; } catch { return t; }
+}
+</script>
+</body>
+</html>
