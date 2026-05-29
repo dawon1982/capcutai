@@ -5,3 +5,4 @@ __pycache__/
 assets/*.mp4
 assets/*.mov
 uploads/
+.asr_cache/

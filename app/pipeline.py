@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 
+from app.asr import transcribe
 from app.draft import build_jumpcut_draft
 from app.probe import probe_media
 from app.silence import compute_keep_segments, detect_silence
@@ -45,11 +46,14 @@ async def run_pipeline(video_path: str, draft_name: str, opts: dict | None = Non
         yield {"step": "silence", "status": "done",
                "stats": {"n_silence": len(silences), "n_keep": len(keeps)}}
 
-        # 2) 음성 인식 (3단에서 구현)
+        # 2) 음성 인식 (mlx-whisper, 세그먼트+단어)
         yield {"step": "asr", "status": "running"}
         t0 = loop.time()
+        transcript = await transcribe(video_path)
+        segments = transcript["segments"]
         await _pad(t0)
-        yield {"step": "asr", "status": "skipped"}
+        yield {"step": "asr", "status": "done",
+               "stats": {"n_segments": len(segments)}}
 
         # 3) 잔말·NG (4단에서 구현)
         yield {"step": "filler", "status": "running"}
@@ -57,12 +61,13 @@ async def run_pipeline(video_path: str, draft_name: str, opts: dict | None = Non
         await _pad(t0)
         yield {"step": "filler", "status": "skipped"}
 
-        # 4) 드래프트 (+자막은 3단)
+        # 4) 드래프트 + 세그먼트 자막
         yield {"step": "draft", "status": "running"}
         t0 = loop.time()
         draft_path = await asyncio.to_thread(
             build_jumpcut_draft, video_path, draft_name, keeps,
             DRAFT_ROOT, info["width"], info["height"], info["fps"],
+            segments,
         )
         await _pad(t0)
         yield {"step": "draft", "status": "done"}
@@ -73,6 +78,8 @@ async def run_pipeline(video_path: str, draft_name: str, opts: dict | None = Non
             "output_sec": round(output_sec, 2),
             "cut_sec": round(info["duration"] - output_sec, 2),
             "n_cuts": len(silences),
+            "n_segments": len(segments),
+            "transcript": transcript["text"],
             "draft_name": draft_name,
             "draft_path": draft_path,
         }}
