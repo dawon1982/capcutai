@@ -21,6 +21,7 @@ tags: [video, capcut, whisper, fastapi]
 
 ## 2026-05-30
 
+- uploads 자동정리(디스크 누적 방지). 빌드 성공 직후 해당 업로드 삭제(미디어는 드래프트 폴더로 하드링크 반입돼 안전) + 잡 소비, 서버 시작 시 이전 세션 잔여 업로드 일괄 정리. 샘플 영상 samples/demo_ko.mp4 추가(설치자 체험용). in-process로 시작정리·빌드후삭제·하드링크 생존·잡404 검증.
 - 버그 수정(실제 녹화 영상 0초/빌드 실패). ffprobe 컨테이너 길이(예 60.326s)가 pycapcut이 읽는 실제 소재 길이(60.193s)보다 길어, 마지막 보존 구간이 소재 끝을 넘으면 VideoSegment가 ValueError로 크래시 → draft_content.json 미생성 → 캡컷 0초. app/draft.py build_jumpcut_draft에서 material.duration으로 보존 구간 클램프. 실제 .mov(60s, 1620x1080)로 재현·수정 검증(비디오23+자막8, draft_info 생성). TTS 합성 클립은 컨테이너=스트림 길이라 안 터졌던 케이스.
 - 피드백 반영(말 끝 잘림). 패딩 기본값 0.15→0.2s. 검토 화면에 '말 끝 여유'(pad) 슬라이더 추가 — '쉼 감도'와 함께 /api/reanalyze로 즉시 재분석. in-process(pad 0/0.2/0.4 → 보존 12.5/13.5/14.5s)·브라우저 검증, 콘솔 무에러.
 - 배포(설치형 공유). 애플 실리콘 맥 지인용: requirements.txt(의존성 고정), install.command(ffmpeg·venv·모델 자동), run.command(서버+브라우저), README. 임시 venv(Python 3.13)로 requirements 완전성·mlx_whisper import 검증. GitHub Public 푸시: github.com/dawon1982/capcutai. (참고: mlx-whisper는 애플 실리콘 전용이라 Vercel/클라우드 배포 불가 — 로컬 설치형으로 결정.)

@@ -20,6 +20,21 @@ os.makedirs(UPLOADS, exist_ok=True)
 
 ALLOWED_EXT = {".mp4", ".mov", ".m4v"}
 
+
+def _clear_uploads():
+    """이전 세션의 남은 업로드 정리. 빌드된 드래프트는 미디어를 드래프트 폴더로
+    따로 반입(하드링크/복사)하므로 업로드 원본을 지워도 안전."""
+    try:
+        for f in os.listdir(UPLOADS):
+            p = os.path.join(UPLOADS, f)
+            if os.path.isfile(p):
+                os.remove(p)
+    except OSError:
+        pass
+
+
+_clear_uploads()  # 디스크 누적 방지(잡은 메모리 상주라 재시작 시 어차피 사라짐)
+
 app = FastAPI(title="캡컷 에이전트")
 _jobs: dict[str, dict] = {}
 
@@ -127,7 +142,7 @@ async def build(job_id: str, payload: dict = Body(...)):
         info, job["analysis"]["segments"],
     )
     output_sec = sum(e - s for s, e in keeps)
-    return {
+    resp = {
         "input_sec": round(info["duration"], 2),
         "output_sec": round(output_sec, 2),
         "cut_sec": round(info["duration"] - output_sec, 2),
@@ -139,6 +154,13 @@ async def build(job_id: str, payload: dict = Body(...)):
         "draft_name": draft_name,
         "draft_path": draft_path,
     }
+    # 빌드 완료 → 업로드 원본 정리(미디어는 드래프트 폴더로 반입됨). 잡도 소비됨.
+    try:
+        os.remove(job["path"])
+    except OSError:
+        pass
+    _jobs.pop(job_id, None)
+    return resp
 
 
 @app.get("/")
