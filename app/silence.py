@@ -26,7 +26,7 @@ def detect_silence(path: str, noise_db: float = -30.0, min_silence: float = 0.3)
 
 
 def compute_keep_segments(
-    duration: float, silences, min_keep: float = 0.2, pad: float = 0.15
+    duration: float, silences, min_keep: float = 0.2, pad: float = 0.2
 ):
     """무음을 제거한 보존(말소리) 구간 리스트 [(start, end)] 반환 (초 단위).
 

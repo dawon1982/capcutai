@@ -74,6 +74,7 @@ async def stream(job_id: str):
                     "n_segments": len(data["segments"]),
                     "n_filler": data["n_filler"],
                     "min_silence": data["min_silence"],
+                    "pad": data["pad"],
                 }}
                 yield f"data: {json.dumps(client, ensure_ascii=False)}\n\n"
             else:
@@ -97,13 +98,15 @@ async def reanalyze(job_id: str, payload: dict = Body(...)):
         raise HTTPException(404, "job not found or not analyzed")
     try:
         min_silence = float(payload.get("min_silence"))
+        pad = float(payload.get("pad"))
     except (TypeError, ValueError):
-        raise HTTPException(400, "min_silence 값이 올바르지 않습니다")
+        raise HTTPException(400, "min_silence/pad 값이 올바르지 않습니다")
     min_silence = max(0.2, min(min_silence, 2.0))  # 외부 입력 클램프
+    pad = max(0.0, min(pad, 0.5))
     info = job["analysis"]["info"]
     keeps = await asyncio.to_thread(
         recompute_keeps, job["path"], info["duration"], min_silence,
-        job["analysis"]["segments"],
+        job["analysis"]["segments"], pad,
     )
     return {"keeps": [[round(s, 3), round(e, 3)] for s, e in keeps]}
 

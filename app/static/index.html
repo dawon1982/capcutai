@@ -227,6 +227,11 @@
           <input id="sens" type="range" min="0.3" max="1.2" step="0.1" value="0.5" />
           <span id="sens-val" class="val">0.5s</span>
         </div>
+        <div class="sens">
+          <label>말 끝 여유</label>
+          <input id="pad" type="range" min="0" max="0.5" step="0.05" value="0.2" />
+          <span id="pad-val" class="val">0.20s</span>
+        </div>
         <div class="tl-meta">
           <span id="tl-time" class="mono">0:00.0</span>
           <span id="tl-dur" class="mono muted">/ 0:00.0</span>
@@ -382,6 +387,8 @@ const keepMetaEl = document.getElementById('keep-meta');
 const buildBtn = document.getElementById('build-btn');
 const sensEl = document.getElementById('sens');
 const sensVal = document.getElementById('sens-val');
+const padEl = document.getElementById('pad');
+const padVal = document.getElementById('pad-val');
 
 function mergeKeeps(arr) {
   const a = arr.filter(k => k[1] > k[0]).sort((x, y) => x[0] - y[0]);
@@ -405,6 +412,8 @@ function showReview(jobId, v) {
   tlDur.textContent = '/ ' + fmtTime(v.duration);
   sensEl.value = v.min_silence || 0.5;
   sensVal.textContent = (+sensEl.value).toFixed(1) + 's';
+  padEl.value = v.pad != null ? v.pad : 0.2;
+  padVal.textContent = (+padEl.value).toFixed(2) + 's';
   document.getElementById('review').classList.add('show');
   resetEl.style.display = 'block';
   renderReview();
@@ -492,14 +501,17 @@ tlEl.addEventListener('click', e => {
 });
 
 sensEl.addEventListener('input', () => { sensVal.textContent = (+sensEl.value).toFixed(1) + 's'; });
-sensEl.addEventListener('change', async () => {
+padEl.addEventListener('input', () => { padVal.textContent = (+padEl.value).toFixed(2) + 's'; });
+sensEl.addEventListener('change', reanalyze);
+padEl.addEventListener('change', reanalyze);
+
+async function reanalyze() {
   if (!REVIEW) return;
-  const sec = (+sensEl.value).toFixed(1);
-  sensVal.textContent = sec + 's …';
+  sensEl.disabled = padEl.disabled = true;
   try {
     const res = await fetch('/api/reanalyze/' + REVIEW.jobId, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ min_silence: +sensEl.value }),
+      body: JSON.stringify({ min_silence: +sensEl.value, pad: +padEl.value }),
     });
     if (res.ok) {
       const r = await res.json();
@@ -507,9 +519,9 @@ sensEl.addEventListener('change', async () => {
       REVIEW.pendingIn = null;
       renderReview();
     }
-  } catch (e) { /* 무시: 값 표시만 복구 */ }
-  sensVal.textContent = sec + 's';
-});
+  } catch (e) { /* 무시 */ }
+  sensEl.disabled = padEl.disabled = false;
+}
 
 document.addEventListener('keydown', e => {
   if (!REVIEW) return;
