@@ -8,6 +8,7 @@ from app.probe import probe_media
 from app.script_edit import (
     find_filler_cuts,
     find_ng_candidates,
+    snap_keeps_to_words,
     strip_fillers,
     subtract_cuts,
 )
@@ -71,6 +72,8 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
         yield {"step": "filler", "status": "running"}
         t0 = loop.time()
         filler_cuts = find_filler_cuts(segments)
+        words = [w for s in segments for w in s["words"]]
+        keeps = snap_keeps_to_words(keeps, words)  # 단어 중간 잘림 방지
         keeps = subtract_cuts(keeps, filler_cuts, min_keep)
         ng = find_ng_candidates(segments)
         await _pad(t0)
@@ -97,6 +100,8 @@ def recompute_keeps(video_path, duration, min_silence, segments, pad=KEEP_PAD):
     잔말 컷도 다시 빼준다(슬라이더 조절해도 잔말은 계속 제거)."""
     silences = detect_silence(video_path, NOISE_DB, min_silence)
     keeps = compute_keep_segments(duration, silences, MIN_KEEP, pad)
+    words = [w for s in segments for w in s["words"]]
+    keeps = snap_keeps_to_words(keeps, words)  # 단어 중간 잘림 방지
     filler_cuts = find_filler_cuts(segments)
     return subtract_cuts(keeps, filler_cuts, MIN_KEEP)
 

@@ -21,6 +21,7 @@ tags: [video, capcut, whisper, fastapi]
 
 ## 2026-05-30
 
+- 버그 수정(유효 구간 끝 잘림). 무음 검출이 단어의 약한 끝소리(받침·조사 '가/을/를')를 무음으로 잘못 잡아 말이 끝나기 전 잘리는 문제. ASR 단어 타임스탬프로 보존 구간이 단어 중간을 자르지 않게 끝/시작을 단어 경계까지 확장(script_edit.snap_keeps_to_words), 잔말 단어는 제외. 실제 영상(60s)에서 끝잘림 9건→0건, 빌드(비디오15+자막8) 정상. 라이브·슬라이더 재분석 양쪽 적용.
 - 1차 완성(status done). 로드맵 Step0~5단 + 배포까지 완료, 사용자 캡컷 확인 OK. 이후는 실사용 피드백 기반 개선. 공유: github.com/dawon1982/capcutai (애플 실리콘 맥 설치형). 실행은 run.command 더블클릭.
 - uploads 자동정리(디스크 누적 방지). 빌드 성공 직후 해당 업로드 삭제(미디어는 드래프트 폴더로 하드링크 반입돼 안전) + 잡 소비, 서버 시작 시 이전 세션 잔여 업로드 일괄 정리. 샘플 영상 samples/demo_ko.mp4 추가(설치자 체험용). in-process로 시작정리·빌드후삭제·하드링크 생존·잡404 검증.
 - 버그 수정(실제 녹화 영상 0초/빌드 실패). ffprobe 컨테이너 길이(예 60.326s)가 pycapcut이 읽는 실제 소재 길이(60.193s)보다 길어, 마지막 보존 구간이 소재 끝을 넘으면 VideoSegment가 ValueError로 크래시 → draft_content.json 미생성 → 캡컷 0초. app/draft.py build_jumpcut_draft에서 material.duration으로 보존 구간 클램프. 실제 .mov(60s, 1620x1080)로 재현·수정 검증(비디오23+자막8, draft_info 생성). TTS 합성 클립은 컨테이너=스트림 길이라 안 터졌던 케이스.

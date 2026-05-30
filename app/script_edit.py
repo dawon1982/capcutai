@@ -75,6 +75,29 @@ def _merge(regions):
     return out
 
 
+def snap_keeps_to_words(keeps, words, fillers=None, margin: float = 0.05):
+    """보존 구간 경계가 단어(잔말 제외) 중간을 자르지 않게 단어 끝/시작까지 확장.
+
+    무음 검출이 단어의 약한 끝소리(받침·조사 '가/을/를' 등)를 무음으로 잘못 잡으면
+    말이 끝나기 전에 잘린다. ASR 단어 타임스탬프로 이런 잘림을 보정한다.
+    잔말 단어는 일부러 자르므로 보호 대상에서 제외.
+    """
+    fillers = DEFAULT_FILLERS if fillers is None else fillers
+    spans = sorted(
+        (w["start"], w["end"]) for w in words if _norm(w["word"]) not in fillers
+    )
+    out = []
+    for ks, ke in keeps:
+        nks, nke = ks, ke
+        for ws, we in spans:
+            if ks <= ws < nke < we:        # 단어가 keep 안에서 시작해 끝을 넘김 → 끝 확장
+                nke = we + margin
+            elif ws < nks < we <= ke:      # 단어가 keep 시작 전 시작 → 시작 당김
+                nks = max(0.0, ws - margin)
+        out.append([nks, nke])
+    return _merge(out)
+
+
 def subtract_cuts(keeps, cuts, min_keep: float = 0.2):
     """보존 구간에서 컷 구간을 빼고 남는 [(s, e)] 반환. min_keep 미만 조각은 버림."""
     merged = _merge(cuts)
