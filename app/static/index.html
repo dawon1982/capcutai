@@ -127,6 +127,60 @@
   }
   .ng-item .x { color: var(--muted); }
 
+  /* 검토 화면 */
+  .review { display: none; }
+  .review.show { display: block; }
+  .player-wrap { background: #000; display: flex; justify-content: center; }
+  #player { max-height: 380px; max-width: 100%; display: block; }
+  .rev-body { padding: 16px 18px; }
+  .sens { display: flex; align-items: center; gap: 10px; font-size: 12px; margin-bottom: 12px; }
+  .sens label { color: var(--muted); flex: 0 0 auto; }
+  .sens input[type=range] { flex: 1; accent-color: var(--green); height: 4px; }
+  .sens .val { font-family: var(--mono); color: var(--green); font-variant-numeric: tabular-nums; flex: 0 0 auto; min-width: 58px; text-align: right; }
+  .tl-meta { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .tl-meta .muted { color: var(--muted); }
+  .tl-meta #tl-keepsum { margin-left: auto; color: var(--muted); }
+  .timeline {
+    position: relative; height: 38px; margin: 10px 0;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+    overflow: hidden; cursor: pointer;
+  }
+  .tl-keep {
+    position: absolute; top: 0; bottom: 0;
+    background: rgba(34,197,94,0.22);
+    border-left: 1px solid var(--green); border-right: 1px solid var(--green);
+  }
+  .tl-ng {
+    position: absolute; top: 0; bottom: 0; z-index: 2;
+    border: 1px dashed var(--muted); cursor: pointer;
+  }
+  .tl-ng:hover { border-color: var(--green); background: rgba(34,197,94,0.12); }
+  .tl-ng .lbl { position: absolute; top: 2px; left: 3px; font: 10px/1 var(--mono); color: var(--muted); }
+  .tl-ng:hover .lbl { color: var(--green); }
+  .tl-in { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--text); z-index: 3; }
+  .tl-head { position: absolute; top: 0; bottom: 0; width: 1px; left: 0; background: var(--green); box-shadow: 0 0 6px var(--green); z-index: 4; pointer-events: none; }
+  .kbd-hint { font-size: 11px; color: var(--muted); margin: 4px 0 16px; line-height: 1.9; }
+  .kbd-hint b { color: var(--text); font-family: var(--mono); font-weight: 500; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+  .keep-head { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .keep-row {
+    display: flex; align-items: center; gap: 10px; padding: 7px 0;
+    border-top: 1px solid var(--line); font-size: 12px;
+  }
+  .keep-row:first-child { border-top: 0; }
+  .keep-row .t { font-family: var(--mono); color: var(--text); font-variant-numeric: tabular-nums; flex: 1; }
+  .keep-row .dur { font-family: var(--mono); color: var(--muted); }
+  .keep-row .del { cursor: pointer; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; }
+  .keep-row .del:hover { color: var(--text); border-color: var(--dim); }
+  .rev-ng { margin-top: 16px; }
+  .build-btn {
+    width: 100%; margin-top: 18px; padding: 12px;
+    background: var(--green); color: #06210f; border: 0; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  .build-btn:hover { filter: brightness(1.08); }
+  .build-btn:disabled { opacity: .5; cursor: default; }
+
   .err { padding: 16px 18px; color: #ef4444; font-family: var(--mono); font-size: 12px; display: none; }
   .err.show { display: block; }
 
@@ -161,6 +215,41 @@
       <div class="step" data-step="draft"><span class="dot"></span><span class="label">드래프트 + 자막</span><span class="state"></span></div>
     </div>
     <div id="err" class="err"></div>
+
+    <div id="review" class="review">
+      <hr />
+      <div class="player-wrap">
+        <video id="player" preload="metadata" playsinline></video>
+      </div>
+      <div class="rev-body">
+        <div class="sens">
+          <label>이보다 긴 쉼만 자르기</label>
+          <input id="sens" type="range" min="0.3" max="1.2" step="0.1" value="0.5" />
+          <span id="sens-val" class="val">0.5s</span>
+        </div>
+        <div class="tl-meta">
+          <span id="tl-time" class="mono">0:00.0</span>
+          <span id="tl-dur" class="mono muted">/ 0:00.0</span>
+          <span id="tl-keepsum"></span>
+        </div>
+        <div id="timeline" class="timeline">
+          <div id="tl-blocks"></div>
+          <div id="tl-pending" class="tl-in" style="display:none"></div>
+          <div id="tl-head" class="tl-head"></div>
+        </div>
+        <div class="kbd-hint">
+          <b>space</b> 재생/정지 · <b>←</b> <b>→</b> 0.1초 (shift=프레임) · <b>[</b> 시작 <b>]</b> 끝 = 보존 구간 추가 · <b>delete</b> 재생헤드 구간 삭제
+        </div>
+        <div class="keep-head">보존 구간 <span id="keep-meta" class="kmeta"></span></div>
+        <div id="keep-list"></div>
+        <div id="rev-ng" class="rev-ng" style="display:none">
+          <div class="keep-head">NG 의심 — 클릭하면 그 구간 제거</div>
+          <div id="rev-ng-list"></div>
+        </div>
+        <button id="build-btn" class="build-btn">드래프트 만들기</button>
+      </div>
+    </div>
+
     <div id="result" class="result">
       <hr />
       <div class="grid">
@@ -234,7 +323,7 @@ async function start(file) {
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data);
     if (ev.step === 'error') { showError(ev.message); es.close(); return; }
-    if (ev.step === 'result') { showResult(ev.result); es.close(); return; }
+    if (ev.step === 'ready') { showReview(job_id, ev.video); es.close(); return; }
     setStep(ev.step, ev.status);
   };
   es.onerror = () => { es.close(); };
@@ -277,6 +366,190 @@ function fmtTime(s) {
   const ss = (s % 60).toFixed(1).padStart(4, '0');
   return m + ':' + ss;
 }
+
+// ---- 검토 화면 (5단) ----
+let REVIEW = null;
+const player = document.getElementById('player');
+const tlEl = document.getElementById('timeline');
+const tlBlocks = document.getElementById('tl-blocks');
+const tlHead = document.getElementById('tl-head');
+const tlPending = document.getElementById('tl-pending');
+const tlTime = document.getElementById('tl-time');
+const tlDur = document.getElementById('tl-dur');
+const tlKeepsum = document.getElementById('tl-keepsum');
+const keepListEl = document.getElementById('keep-list');
+const keepMetaEl = document.getElementById('keep-meta');
+const buildBtn = document.getElementById('build-btn');
+const sensEl = document.getElementById('sens');
+const sensVal = document.getElementById('sens-val');
+
+function mergeKeeps(arr) {
+  const a = arr.filter(k => k[1] > k[0]).sort((x, y) => x[0] - y[0]);
+  const out = [];
+  for (const [s, e] of a) {
+    if (out.length && s <= out[out.length - 1][1] + 1e-6)
+      out[out.length - 1][1] = Math.max(out[out.length - 1][1], e);
+    else out.push([s, e]);
+  }
+  return out;
+}
+
+function showReview(jobId, v) {
+  REVIEW = {
+    jobId, duration: v.duration, fps: v.fps || 30,
+    keeps: mergeKeeps(v.keeps.map(k => [k[0], k[1]])),
+    ng: v.ng || [], transcript: v.transcript,
+    n_segments: v.n_segments, n_filler: v.n_filler, pendingIn: null,
+  };
+  player.src = '/api/video/' + jobId;
+  tlDur.textContent = '/ ' + fmtTime(v.duration);
+  sensEl.value = v.min_silence || 0.5;
+  sensVal.textContent = (+sensEl.value).toFixed(1) + 's';
+  document.getElementById('review').classList.add('show');
+  resetEl.style.display = 'block';
+  renderReview();
+  requestAnimationFrame(tick);
+}
+
+function clampT(t) { return Math.max(0, Math.min(t, REVIEW.duration)); }
+function pct(t) { return (t / REVIEW.duration * 100) + '%'; }
+function addKeep(s, e) { REVIEW.keeps = mergeKeeps(REVIEW.keeps.concat([[s, e]])); }
+function removeKeepAt(t) {
+  const n = REVIEW.keeps.length;
+  REVIEW.keeps = REVIEW.keeps.filter(k => !(t >= k[0] && t <= k[1]));
+  if (REVIEW.keeps.length !== n) renderReview();
+}
+function removeKeepsOverlap(s, e) {
+  REVIEW.keeps = REVIEW.keeps.filter(k => !(k[0] < e && k[1] > s));
+  renderReview();
+}
+
+function renderReview() {
+  tlBlocks.innerHTML = '';
+  for (const [s, e] of REVIEW.keeps) {
+    const d = document.createElement('div');
+    d.className = 'tl-keep';
+    d.style.left = pct(s);
+    d.style.width = ((e - s) / REVIEW.duration * 100) + '%';
+    tlBlocks.appendChild(d);
+  }
+  for (const c of REVIEW.ng) {
+    const d = document.createElement('div');
+    d.className = 'tl-ng';
+    d.style.left = pct(c.start);
+    d.style.width = ((c.end - c.start) / REVIEW.duration * 100) + '%';
+    d.title = 'NG 의심 — 클릭해서 제거';
+    const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = 'NG';
+    d.appendChild(lbl);
+    d.addEventListener('click', ev => { ev.stopPropagation(); removeKeepsOverlap(c.start, c.end); });
+    tlBlocks.appendChild(d);
+  }
+  if (REVIEW.pendingIn != null) { tlPending.style.display = 'block'; tlPending.style.left = pct(REVIEW.pendingIn); }
+  else tlPending.style.display = 'none';
+
+  keepListEl.innerHTML = '';
+  REVIEW.keeps.forEach(([s, e], i) => {
+    const row = document.createElement('div'); row.className = 'keep-row';
+    const t = document.createElement('span'); t.className = 't'; t.textContent = fmtTime(s) + ' – ' + fmtTime(e);
+    const dur = document.createElement('span'); dur.className = 'dur'; dur.textContent = (e - s).toFixed(1) + 's';
+    const del = document.createElement('span'); del.className = 'del'; del.textContent = '삭제';
+    del.addEventListener('click', () => { REVIEW.keeps.splice(i, 1); renderReview(); });
+    row.append(t, dur, del);
+    keepListEl.appendChild(row);
+  });
+  const sum = REVIEW.keeps.reduce((a, [s, e]) => a + (e - s), 0);
+  tlKeepsum.textContent = '보존 ' + REVIEW.keeps.length + '구간 · ' + sum.toFixed(1) + 's';
+  keepMetaEl.textContent = '세그먼트 ' + REVIEW.n_segments + ' · 잔말 컷 ' + REVIEW.n_filler;
+
+  const ngWrap = document.getElementById('rev-ng');
+  if (REVIEW.ng.length) {
+    const ngList = document.getElementById('rev-ng-list');
+    ngList.innerHTML = '';
+    REVIEW.ng.forEach(c => {
+      const row = document.createElement('div'); row.className = 'ng-item'; row.style.cursor = 'pointer';
+      const t = document.createElement('span'); t.className = 't'; t.textContent = fmtTime(c.start) + '–' + fmtTime(c.end);
+      const x = document.createElement('span'); x.className = 'x'; x.textContent = c.text;
+      row.append(t, x);
+      row.addEventListener('click', () => removeKeepsOverlap(c.start, c.end));
+      ngList.appendChild(row);
+    });
+    ngWrap.style.display = 'block';
+  }
+}
+
+function tick() {
+  if (!REVIEW) return;
+  const t = player.currentTime || 0;
+  tlHead.style.left = pct(t);
+  tlTime.textContent = fmtTime(t);
+  requestAnimationFrame(tick);
+}
+
+tlEl.addEventListener('click', e => {
+  if (!REVIEW) return;
+  const rect = tlEl.getBoundingClientRect();
+  player.currentTime = clampT((e.clientX - rect.left) / rect.width * REVIEW.duration);
+});
+
+sensEl.addEventListener('input', () => { sensVal.textContent = (+sensEl.value).toFixed(1) + 's'; });
+sensEl.addEventListener('change', async () => {
+  if (!REVIEW) return;
+  const sec = (+sensEl.value).toFixed(1);
+  sensVal.textContent = sec + 's …';
+  try {
+    const res = await fetch('/api/reanalyze/' + REVIEW.jobId, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ min_silence: +sensEl.value }),
+    });
+    if (res.ok) {
+      const r = await res.json();
+      REVIEW.keeps = mergeKeeps(r.keeps.map(k => [k[0], k[1]]));
+      REVIEW.pendingIn = null;
+      renderReview();
+    }
+  } catch (e) { /* 무시: 값 표시만 복구 */ }
+  sensVal.textContent = sec + 's';
+});
+
+document.addEventListener('keydown', e => {
+  if (!REVIEW) return;
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  switch (e.key) {
+    case ' ': e.preventDefault(); player.paused ? player.play() : player.pause(); break;
+    case 'ArrowLeft': e.preventDefault(); player.currentTime = clampT(player.currentTime - (e.shiftKey ? 1 / REVIEW.fps : 0.1)); break;
+    case 'ArrowRight': e.preventDefault(); player.currentTime = clampT(player.currentTime + (e.shiftKey ? 1 / REVIEW.fps : 0.1)); break;
+    case '[': REVIEW.pendingIn = player.currentTime; renderReview(); break;
+    case ']':
+      if (REVIEW.pendingIn != null) {
+        const a = Math.min(REVIEW.pendingIn, player.currentTime);
+        const b = Math.max(REVIEW.pendingIn, player.currentTime);
+        if (b - a > 0.05) addKeep(a, b);
+        REVIEW.pendingIn = null; renderReview();
+      }
+      break;
+    case 'Backspace': case 'Delete': e.preventDefault(); removeKeepAt(player.currentTime); break;
+  }
+});
+
+buildBtn.addEventListener('click', async () => {
+  if (!REVIEW) return;
+  if (!REVIEW.keeps.length) return showError('보존 구간이 없습니다. 최소 한 구간은 남겨주세요.');
+  buildBtn.disabled = true;
+  setStep('draft', 'running');
+  let res;
+  try {
+    res = await fetch('/api/build/' + REVIEW.jobId, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keeps: REVIEW.keeps }),
+    });
+  } catch (e) { buildBtn.disabled = false; setStep('draft', 'error'); return showError('빌드 실패: ' + e.message); }
+  if (!res.ok) { buildBtn.disabled = false; setStep('draft', 'error'); const t = await res.text(); return showError(safeMsg(t)); }
+  const r = await res.json();
+  setStep('draft', 'done');
+  document.getElementById('review').classList.remove('show');
+  REVIEW = null;
+  showResult(r);
+});
 
 function showError(msg) {
   errEl.textContent = msg;

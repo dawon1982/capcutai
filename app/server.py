@@ -1,11 +1,17 @@
+import asyncio
 import json
 import os
 import uuid
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.pipeline import run_pipeline, safe_draft_name
+from app.pipeline import (
+    build_draft_from_keeps,
+    recompute_keeps,
+    run_pipeline,
+    safe_draft_name,
+)
 
 BASE = os.path.dirname(__file__)
 UPLOADS = os.path.join(BASE, "..", "uploads")
@@ -16,6 +22,22 @@ ALLOWED_EXT = {".mp4", ".mov", ".m4v"}
 
 app = FastAPI(title="캡컷 에이전트")
 _jobs: dict[str, dict] = {}
+
+
+def _sanitize_keeps(raw, duration: float):
+    """외부 입력 경계 검증: [[s,e],...] → 0<=s<e<=duration로 클램프·정렬, 무효 폐기."""
+    out = []
+    for item in raw or []:
+        try:
+            s, e = float(item[0]), float(item[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        s = max(0.0, min(s, duration))
+        e = max(0.0, min(e, duration))
+        if e - s > 0.01:
+            out.append((s, e))
+    out.sort()
+    return out
 
 
 @app.post("/api/upload")
@@ -37,13 +59,83 @@ async def stream(job_id: str):
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(404, "job not found")
-    draft_name = safe_draft_name(job["name"])
 
     async def gen():
-        async for ev in run_pipeline(job["path"], draft_name):
-            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        async for ev in run_pipeline(job["path"]):
+            if ev.get("step") == "ready":
+                data = ev["data"]
+                job["analysis"] = data  # segments(words 포함)·info는 서버 보관
+                client = {"step": "ready", "video": {
+                    "duration": round(data["info"]["duration"], 3),
+                    "fps": data["info"]["fps"],
+                    "keeps": [[round(s, 3), round(e, 3)] for s, e in data["keeps"]],
+                    "ng": data["ng"],
+                    "transcript": data["transcript"],
+                    "n_segments": len(data["segments"]),
+                    "n_filler": data["n_filler"],
+                    "min_silence": data["min_silence"],
+                }}
+                yield f"data: {json.dumps(client, ensure_ascii=False)}\n\n"
+            else:
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/api/video/{job_id}")
+async def video(job_id: str):
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "job not found")
+    return FileResponse(job["path"])  # starlette FileResponse가 Range 처리 → seek 가능
+
+
+@app.post("/api/reanalyze/{job_id}")
+async def reanalyze(job_id: str, payload: dict = Body(...)):
+    job = _jobs.get(job_id)
+    if not job or "analysis" not in job:
+        raise HTTPException(404, "job not found or not analyzed")
+    try:
+        min_silence = float(payload.get("min_silence"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "min_silence 값이 올바르지 않습니다")
+    min_silence = max(0.2, min(min_silence, 2.0))  # 외부 입력 클램프
+    info = job["analysis"]["info"]
+    keeps = await asyncio.to_thread(
+        recompute_keeps, job["path"], info["duration"], min_silence,
+        job["analysis"]["segments"],
+    )
+    return {"keeps": [[round(s, 3), round(e, 3)] for s, e in keeps]}
+
+
+@app.post("/api/build/{job_id}")
+async def build(job_id: str, payload: dict = Body(...)):
+    job = _jobs.get(job_id)
+    if not job or "analysis" not in job:
+        raise HTTPException(404, "job not found or not analyzed")
+    info = job["analysis"]["info"]
+    keeps = _sanitize_keeps(payload.get("keeps"), info["duration"])
+    if not keeps:
+        raise HTTPException(400, "보존 구간이 비어 있습니다")
+
+    draft_name = safe_draft_name(job["name"])
+    draft_path = await asyncio.to_thread(
+        build_draft_from_keeps, job["path"], draft_name, keeps,
+        info, job["analysis"]["segments"],
+    )
+    output_sec = sum(e - s for s, e in keeps)
+    return {
+        "input_sec": round(info["duration"], 2),
+        "output_sec": round(output_sec, 2),
+        "cut_sec": round(info["duration"] - output_sec, 2),
+        "n_cuts": len(keeps),
+        "n_segments": len(job["analysis"]["segments"]),
+        "n_filler": job["analysis"]["n_filler"],
+        "transcript": job["analysis"]["transcript"],
+        "ng": job["analysis"]["ng"],
+        "draft_name": draft_name,
+        "draft_path": draft_path,
+    }
 
 
 @app.get("/")
