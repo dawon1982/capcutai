@@ -112,6 +112,13 @@ def build_jumpcut_draft(
     script.add_track(c.TrackType.video)
 
     material = c.VideoMaterial(staged)
+    # ffprobe 컨테이너 길이가 실제 소재 길이보다 길 수 있어(오디오/비디오 트랙 길이 차) 보존
+    # 구간이 소재 끝을 넘으면 pycapcut이 크래시한다. 소재 실제 길이로 클램프.
+    mat_dur = material.duration / SEC
+    keep_segments = [
+        (s, min(e, mat_dur)) for s, e in keep_segments if min(e, mat_dur) - s > 0
+    ]
+
     timeline = 0.0
     for s, e in keep_segments:
         dur = e - s

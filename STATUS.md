@@ -21,6 +21,7 @@ tags: [video, capcut, whisper, fastapi]
 
 ## 2026-05-30
 
+- 버그 수정(실제 녹화 영상 0초/빌드 실패). ffprobe 컨테이너 길이(예 60.326s)가 pycapcut이 읽는 실제 소재 길이(60.193s)보다 길어, 마지막 보존 구간이 소재 끝을 넘으면 VideoSegment가 ValueError로 크래시 → draft_content.json 미생성 → 캡컷 0초. app/draft.py build_jumpcut_draft에서 material.duration으로 보존 구간 클램프. 실제 .mov(60s, 1620x1080)로 재현·수정 검증(비디오23+자막8, draft_info 생성). TTS 합성 클립은 컨테이너=스트림 길이라 안 터졌던 케이스.
 - 피드백 반영(말 끝 잘림). 패딩 기본값 0.15→0.2s. 검토 화면에 '말 끝 여유'(pad) 슬라이더 추가 — '쉼 감도'와 함께 /api/reanalyze로 즉시 재분석. in-process(pad 0/0.2/0.4 → 보존 12.5/13.5/14.5s)·브라우저 검증, 콘솔 무에러.
 - 배포(설치형 공유). 애플 실리콘 맥 지인용: requirements.txt(의존성 고정), install.command(ffmpeg·venv·모델 자동), run.command(서버+브라우저), README. 임시 venv(Python 3.13)로 requirements 완전성·mlx_whisper import 검증. GitHub Public 푸시: github.com/dawon1982/capcutai. (참고: mlx-whisper는 애플 실리콘 전용이라 Vercel/클라우드 배포 불가 — 로컬 설치형으로 결정.)
 - 5단 완료(브라우저 검증). 분석(무음→ASR→잔말)과 드래프트 빌드를 분리: 처리 후 항상 '검토 화면'(원본 영상 플레이어 + 타임라인 + 보존구간 목록). [/] 키로 보존구간 추가, delete로 삭제, 타임라인 클릭 seek, NG 막대 원클릭 제거. '드래프트 만들기'로 사용자 확정 keeps 빌드(/api/build). 영상은 /api/video Range로 서빙. 말끝 잘림 대응: compute_keep_segments에 패딩(0.15s)으로 단어 끝소리·호흡 보존, 최소무음 0.3→0.5s. '쉼 감도' 슬라이더(/api/reanalyze, ASR 재실행 없이 무음만 재검출+잔말 유지). preview MCP로 [/]·delete·NG제거·슬라이더·빌드 전 흐름 + 결과 keeps 일치 검증, 콘솔 무에러.
