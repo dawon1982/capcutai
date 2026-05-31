@@ -75,6 +75,33 @@ def _merge(regions):
     return out
 
 
+_LEAD_NUM = re.compile(r"^\s*(\d+)[.)]\s+")
+
+
+def strip_list_numbers(segments):
+    """whisper가 자동으로 붙인 가짜 목록 번호 제거(자막용).
+
+    실제 목록은 1부터 1씩 증가하는 연속 번호. 그 시퀀스를 벗어나는 번호는 가짜로 보고
+    앞 'N.' 마커만 제거(텍스트는 유지). 번호 없는 문장(narration)이 나오면 시퀀스를
+    리셋(새 목록은 다시 1부터). whisper가 목록 모드에 갇혀 5,5,6,7…을 계속 붙이는 환각 대응.
+    """
+    out = []
+    expected = 1  # 다음에 와야 할 '진짜' 번호 (1부터 시작)
+    for seg in segments:
+        text = seg["text"]
+        m = _LEAD_NUM.match(text)
+        if not m:
+            expected = 1  # narration → 새 목록 대기
+            out.append(seg)
+        elif int(m.group(1)) == expected:
+            expected += 1  # 연속 증가 → 실제 목록 항목, 번호 유지
+            out.append(seg)
+        else:
+            expected = -1  # 시퀀스 이탈 → narration 리셋 전까지 이후 번호도 가짜
+            out.append({**seg, "text": _LEAD_NUM.sub("", text, count=1)})
+    return out
+
+
 def snap_keeps_to_words(keeps, words, fillers=None, margin: float = 0.05):
     """보존 구간 경계가 단어(잔말 제외) 중간을 자르지 않게 단어 끝/시작까지 확장.
 

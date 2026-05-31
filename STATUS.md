@@ -19,6 +19,10 @@ tags: [video, capcut, whisper, fastapi]
 
 # 개발 로그
 
+## 2026-06-01
+
+- 자막 가짜 목록번호 제거. whisper가 목록 모드에 갇혀 narration에도 5,5,6,7… 번호를 붙이는 환각 대응(script_edit.strip_list_numbers). 실제 목록은 1부터 증가하는 연속 → 시퀀스 이탈 번호는 가짜로 보고 앞 'N.' 제거, narration 나오면 1로 리셋. 진짜 6(증상#6) vs 가짜 6(narration 뒤) 구분 케이스까지 실제 자막으로 검증. 자막 빌드(build_draft_from_keeps)에 적용.
+
 ## 2026-05-31
 
 - 배포 호환성 수정. 가족 맥(시스템 Python 3.9.6)에서 install.command 실패(deps는 3.10+ 필요). install.command가 python3.13~3.10 탐지, 없으면 Homebrew로 python@3.13 설치 후 그 인터프리터로 venv 생성(이전 실패 venv는 rm). 추가로 bash 스크립트에서 brew가 안 보이는 문제(기본 셸 zsh, brew PATH가 ~/.zprofile에만) → /opt/homebrew/bin/brew shellenv 직접 소싱. README에 ZIP 격리(Gatekeeper) 해결법(xattr -dr) 추가. Dock 런처 .app(커스텀 아이콘) 생성은 로컬 전용(.gitignore).

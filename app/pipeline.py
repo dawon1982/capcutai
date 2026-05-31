@@ -10,6 +10,7 @@ from app.script_edit import (
     find_ng_candidates,
     snap_keeps_to_words,
     strip_fillers,
+    strip_list_numbers,
     subtract_cuts,
 )
 from app.silence import compute_keep_segments, detect_silence
@@ -107,8 +108,9 @@ def recompute_keeps(video_path, duration, min_silence, segments, pad=KEEP_PAD):
 
 
 def build_draft_from_keeps(video_path, draft_name, keeps, info, segments):
-    """검토 화면에서 사용자가 확정한 keeps로 캡컷 드래프트 생성. 자막은 잔말 제거본 사용."""
-    sub = strip_fillers(segments)
+    """검토 화면에서 사용자가 확정한 keeps로 캡컷 드래프트 생성.
+    자막은 잔말 제거 + whisper 가짜 목록번호 제거본 사용."""
+    sub = strip_list_numbers(strip_fillers(segments))
     return build_jumpcut_draft(
         video_path, draft_name, keeps, DRAFT_ROOT,
         info["width"], info["height"], info["fps"], sub,
