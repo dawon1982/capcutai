@@ -32,8 +32,24 @@ cd capcutai
 그다음 **`install.command` 더블클릭** (또는 터미널에서 `./install.command`).
 ffmpeg 설치 → 가상환경 → 패키지 → 음성 모델(약 1.5GB, 처음 한 번) 다운로드까지 자동입니다.
 
-> GitHub에서 zip으로 받았다면 `.command` 더블클릭 시 보안 경고가 날 수 있습니다.
-> 그 경우 파일 우클릭 → "열기"를 한 번 해주면 됩니다. (git clone으로 받으면 경고 없음)
+### ⚠️ "확인할 수 없습니다" / "악성 코드" 경고가 뜨면 (ZIP으로 받은 경우)
+
+GitHub에서 **ZIP으로 다운로드**하면 macOS가 모든 파일에 "다운로드됨" 격리 딱지를 붙입니다.
+서명되지 않은 스크립트라 차단되는데(최신 macOS는 우클릭 → 열기로도 안 됨), 아래 한 번이면 해결됩니다.
+
+**방법 1 — 터미널 한 줄 (가장 확실, 권장)**
+1. **Spotlight**(⌘+Space) → `터미널` 입력 → 열기
+2. 터미널에 이걸 입력하고 **맨 끝에 한 칸 띄우기** (아직 Enter 누르지 말 것):
+   ```
+   xattr -dr com.apple.quarantine 
+   ```
+3. **압축 푼 `capcutai` 폴더를 터미널 창으로 드래그** → 경로가 자동으로 붙습니다 → **Enter**
+4. 이제 `install.command` 더블클릭하면 정상 실행됩니다.
+
+**방법 2 — git clone (경고 자체가 안 생김)**
+ZIP 대신 터미널에서 `git clone https://github.com/dawon1982/capcutai.git` 로 받으면 격리 딱지가 안 붙어 바로 됩니다.
+
+> 한 번만 풀어주면 `install.command`·`run.command` 둘 다 이후로는 그냥 더블클릭됩니다.
 
 ## 사용
 
