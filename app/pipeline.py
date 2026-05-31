@@ -6,8 +6,10 @@ from app.asr import transcribe
 from app.draft import build_jumpcut_draft
 from app.probe import probe_media
 from app.script_edit import (
+    drop_words_in_spans,
     find_filler_cuts,
     find_ng_candidates,
+    find_repeat_cuts,
     snap_keeps_to_words,
     strip_fillers,
     strip_list_numbers,
@@ -69,17 +71,19 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
         yield {"step": "asr", "status": "done",
                "stats": {"n_segments": len(segments)}}
 
-        # 3) 잔말 컷(자동) + NG 후보(표시만)
+        # 3) 잔말 컷 + 즉시 반복(말더듬) 자동 컷 + NG 후보(표시만)
         yield {"step": "filler", "status": "running"}
         t0 = loop.time()
         filler_cuts = find_filler_cuts(segments)
+        repeat_cuts = find_repeat_cuts(segments)
         words = [w for s in segments for w in s["words"]]
         keeps = snap_keeps_to_words(keeps, words)  # 단어 중간 잘림 방지
-        keeps = subtract_cuts(keeps, filler_cuts, min_keep)
+        keeps = subtract_cuts(keeps, filler_cuts + repeat_cuts, min_keep)
         ng = find_ng_candidates(segments)
         await _pad(t0)
         yield {"step": "filler", "status": "done",
-               "stats": {"n_filler": len(filler_cuts), "n_ng": len(ng)}}
+               "stats": {"n_filler": len(filler_cuts), "n_repeat": len(repeat_cuts),
+                         "n_ng": len(ng)}}
 
         yield {"step": "ready", "data": {
             "info": info,
@@ -104,13 +108,15 @@ def recompute_keeps(video_path, duration, min_silence, segments, pad=KEEP_PAD):
     words = [w for s in segments for w in s["words"]]
     keeps = snap_keeps_to_words(keeps, words)  # 단어 중간 잘림 방지
     filler_cuts = find_filler_cuts(segments)
-    return subtract_cuts(keeps, filler_cuts, MIN_KEEP)
+    repeat_cuts = find_repeat_cuts(segments)
+    return subtract_cuts(keeps, filler_cuts + repeat_cuts, MIN_KEEP)
 
 
 def build_draft_from_keeps(video_path, draft_name, keeps, info, segments):
     """검토 화면에서 사용자가 확정한 keeps로 캡컷 드래프트 생성.
-    자막은 잔말 제거 + whisper 가짜 목록번호 제거본 사용."""
-    sub = strip_list_numbers(strip_fillers(segments))
+    자막은 잔말 제거 + 반복 컷 단어 제거 + whisper 가짜 목록번호 제거 + 끝마침표 제거본 사용."""
+    repeat_cuts = find_repeat_cuts(segments)
+    sub = strip_list_numbers(drop_words_in_spans(strip_fillers(segments), repeat_cuts))
     return build_jumpcut_draft(
         video_path, draft_name, keeps, DRAFT_ROOT,
         info["width"], info["height"], info["fps"], sub,

@@ -42,7 +42,49 @@ def strip_fillers(segments, fillers=None):
     return out
 
 
-def find_ng_candidates(segments, threshold: float = 0.85):
+def find_repeat_cuts(segments, min_words: int = 2, max_words: int = 8):
+    """즉시 반복되는 다단어 구절(말더듬·리테이크)의 '앞' 발화 구간 [(start, end)] 반환.
+
+    예: '오늘도 이렇게 말씀하시는'이 바로 이어 반복되면 앞 것을 컷(뒤 발화는 남김).
+    2단어 이상 '정확히' 일치하는 연속 반복만 대상 — 의도한 강조/단어 하나 반복은 건드리지 않음.
+    """
+    words = [w for s in segments for w in s.get("words", [])]
+    norms = [_norm(w["word"]) for w in words]
+    n = len(words)
+    cuts = []
+    i = 0
+    while i < n:
+        matched = False
+        kmax = min(max_words, (n - i) // 2)
+        for k in range(kmax, min_words - 1, -1):
+            if norms[i:i + k] == norms[i + k:i + 2 * k] and all(norms[i:i + k]):
+                cuts.append((words[i]["start"], words[i + k]["start"]))
+                i += k  # 앞 발화만 컷, 뒤 발화 위치로 이동(3번 이상 반복도 연쇄 처리)
+                matched = True
+                break
+        if not matched:
+            i += 1
+    return cuts
+
+
+def drop_words_in_spans(segments, spans):
+    """주어진 시간 구간(컷)에 시작이 걸친 단어를 빼고 자막 텍스트 재조합.
+    반복 컷으로 잘려나간 앞 발화가 자막에 남지 않게 한다(영상-자막 동기화)."""
+    if not spans:
+        return segments
+    out = []
+    for seg in segments:
+        ws = seg.get("words", [])
+        if not ws:
+            out.append(seg)
+            continue
+        kept = [w for w in ws if not any(cs <= w["start"] < ce for cs, ce in spans)]
+        text = "".join(w["word"] for w in kept).strip()
+        out.append({**seg, "text": text, "words": kept})
+    return out
+
+
+def find_ng_candidates(segments, threshold: float = 0.8):
     """인접 세그먼트 텍스트가 비슷하면 재촬영(NG) 의심 → 앞 테이크를 후보로 표시.
 
     컷하지 않고 '제안'만. {start, end, text, similarity}.

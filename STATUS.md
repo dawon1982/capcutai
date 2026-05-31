@@ -21,6 +21,7 @@ tags: [video, capcut, whisper, fastapi]
 
 ## 2026-06-01
 
+- 즉시 반복(말더듬·리테이크) 자동 컷. script_edit.find_repeat_cuts: 단어 스트림에서 2단어 이상 구절이 바로 이어 정확히 반복되면 앞 발화 구간을 컷(filler처럼 keeps에서 subtract). 자막은 drop_words_in_spans로 잘린 앞 발화 단어 제거해 영상-자막 동기화. 단어 1개 반복·의도한 강조·정상 발화는 안 건드림(오탐 최소화). 부분 더듬·말바꿈은 자동컷 안 하고 NG 표시(임계값 0.85→0.8). 합성+실제영상 검증(오탐 0). snap+subtract 순서로 반복 구간 정상 제거 확인.
 - 자막/무음 튜닝 3건. (1) 무음 더 공격적: 기본 min_silence 0.5→0.3, pad 0.2→0.1(단어 잘림은 snap이 막음), '쉼 감도' 슬라이더 0.1~1.2로 확장(서버 클램프 0.1). 실제영상 60.3→30.6s 컷, 끝잘림 0건. (2) 자막 1줄: TextStyle auto_wrapping=False(type=text). (3) 자막 끝 마침표 제거(?,!는 유지).
 - 자막 가짜 목록번호 제거. whisper가 목록 모드에 갇혀 narration에도 5,5,6,7… 번호를 붙이는 환각 대응(script_edit.strip_list_numbers). 실제 목록은 1부터 증가하는 연속 → 시퀀스 이탈 번호는 가짜로 보고 앞 'N.' 제거, narration 나오면 1로 리셋. 진짜 6(증상#6) vs 가짜 6(narration 뒤) 구분 케이스까지 실제 자막으로 검증. 자막 빌드(build_draft_from_keeps)에 적용.
 
