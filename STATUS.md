@@ -19,6 +19,10 @@ tags: [video, capcut, whisper, fastapi]
 
 # 개발 로그
 
+## 2026-05-31
+
+- 배포 호환성 수정. 가족 맥(시스템 Python 3.9.6)에서 install.command 실패(deps는 3.10+ 필요). install.command가 python3.13~3.10 탐지, 없으면 Homebrew로 python@3.13 설치 후 그 인터프리터로 venv 생성(이전 실패 venv는 rm). README에 ZIP 격리(Gatekeeper) 해결법(xattr -dr) 추가. Dock 런처 .app(커스텀 아이콘) 생성은 로컬 전용(.gitignore).
+
 ## 2026-05-30
 
 - 버그 수정(유효 구간 끝 잘림). 무음 검출이 단어의 약한 끝소리(받침·조사 '가/을/를')를 무음으로 잘못 잡아 말이 끝나기 전 잘리는 문제. ASR 단어 타임스탬프로 보존 구간이 단어 중간을 자르지 않게 끝/시작을 단어 경계까지 확장(script_edit.snap_keeps_to_words), 잔말 단어는 제외. 실제 영상(60s)에서 끝잘림 9건→0건, 빌드(비디오15+자막8) 정상. 라이브·슬라이더 재분석 양쪽 적용.

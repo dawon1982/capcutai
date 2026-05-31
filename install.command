@@ -14,13 +14,28 @@ if [ "$(uname -m)" != "arm64" ]; then
   exit 1
 fi
 
-# 1) Python 3 확인
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "❌ Python 3가 없습니다."
-  echo "   https://www.python.org/downloads/ 에서 설치한 뒤 다시 실행하세요."
-  exit 1
+# 1) Python 3.10+ 확보 (macOS 기본 python3는 3.9라 부족 → Homebrew로 설치)
+PY=""
+for c in python3.13 python3.12 python3.11 python3.10; do
+  if command -v "$c" >/dev/null 2>&1; then PY="$c"; break; fi
+done
+if [ -z "$PY" ] && command -v python3 >/dev/null 2>&1; then
+  if python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+    PY="python3"
+  fi
 fi
-echo "✓ Python: $(python3 --version)"
+if [ -z "$PY" ]; then
+  if command -v brew >/dev/null 2>&1; then
+    echo "Python 3.10+ 가 없어 Homebrew로 설치합니다 (몇 분 걸립니다)..."
+    brew install python@3.13
+    PY="$(brew --prefix python@3.13)/bin/python3.13"
+  else
+    echo "❌ Python 3.10+ 도, Homebrew도 없습니다."
+    echo "   https://brew.sh 에서 Homebrew 설치 후 다시 실행하세요."
+    exit 1
+  fi
+fi
+echo "✓ Python: $("$PY" --version)"
 
 # 2) ffmpeg 확인 (없으면 Homebrew로 설치)
 if ! command -v ffmpeg >/dev/null 2>&1; then
@@ -37,9 +52,10 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
 fi
 echo "✓ ffmpeg 확인됨"
 
-# 3) 가상환경 + 패키지
+# 3) 가상환경 + 패키지 (이전 실패본이 있으면 지우고 새로)
 echo "가상환경 만들고 패키지 설치 중..."
-python3 -m venv .venv
+rm -rf .venv
+"$PY" -m venv .venv
 ./.venv/bin/pip install --upgrade pip >/dev/null
 ./.venv/bin/pip install -r requirements.txt
 
