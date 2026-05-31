@@ -6,3 +6,4 @@ assets/*.mp4
 assets/*.mov
 uploads/
 .asr_cache/
+*.app/
