@@ -14,6 +14,14 @@ if [ "$(uname -m)" != "arm64" ]; then
   exit 1
 fi
 
+# Homebrew PATH 보장: 기본 셸은 zsh라 brew 경로가 ~/.zprofile에만 들어가
+# bash 스크립트에선 brew/ffmpeg가 안 보일 수 있다. 알려진 위치에서 직접 소싱.
+if [ -x /opt/homebrew/bin/brew ]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [ -x /usr/local/bin/brew ]; then
+  eval "$(/usr/local/bin/brew shellenv)"
+fi
+
 # 1) Python 3.10+ 확보 (macOS 기본 python3는 3.9라 부족 → Homebrew로 설치)
 PY=""
 for c in python3.13 python3.12 python3.11 python3.10; do

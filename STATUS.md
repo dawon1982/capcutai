@@ -21,7 +21,7 @@ tags: [video, capcut, whisper, fastapi]
 
 ## 2026-05-31
 
-- 배포 호환성 수정. 가족 맥(시스템 Python 3.9.6)에서 install.command 실패(deps는 3.10+ 필요). install.command가 python3.13~3.10 탐지, 없으면 Homebrew로 python@3.13 설치 후 그 인터프리터로 venv 생성(이전 실패 venv는 rm). README에 ZIP 격리(Gatekeeper) 해결법(xattr -dr) 추가. Dock 런처 .app(커스텀 아이콘) 생성은 로컬 전용(.gitignore).
+- 배포 호환성 수정. 가족 맥(시스템 Python 3.9.6)에서 install.command 실패(deps는 3.10+ 필요). install.command가 python3.13~3.10 탐지, 없으면 Homebrew로 python@3.13 설치 후 그 인터프리터로 venv 생성(이전 실패 venv는 rm). 추가로 bash 스크립트에서 brew가 안 보이는 문제(기본 셸 zsh, brew PATH가 ~/.zprofile에만) → /opt/homebrew/bin/brew shellenv 직접 소싱. README에 ZIP 격리(Gatekeeper) 해결법(xattr -dr) 추가. Dock 런처 .app(커스텀 아이콘) 생성은 로컬 전용(.gitignore).
 
 ## 2026-05-30
 
