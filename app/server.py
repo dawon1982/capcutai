@@ -116,7 +116,7 @@ async def reanalyze(job_id: str, payload: dict = Body(...)):
         pad = float(payload.get("pad"))
     except (TypeError, ValueError):
         raise HTTPException(400, "min_silence/pad 값이 올바르지 않습니다")
-    min_silence = max(0.2, min(min_silence, 2.0))  # 외부 입력 클램프
+    min_silence = max(0.1, min(min_silence, 2.0))  # 외부 입력 클램프
     pad = max(0.0, min(pad, 0.5))
     info = job["analysis"]["info"]
     keeps = await asyncio.to_thread(

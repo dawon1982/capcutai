@@ -65,14 +65,15 @@ def _finalize_draft(draft_path: str) -> None:
 
 def _add_subtitles(script, segments, keep_segments) -> int:
     """ASR 세그먼트를 점프컷 타임라인에 매핑해 자막 트랙으로 추가. 추가한 자막 수 반환."""
-    style = c.TextStyle(size=8.0, color=(1.0, 1.0, 1.0), align=1, auto_wrapping=True)
+    style = c.TextStyle(size=8.0, color=(1.0, 1.0, 1.0), align=1, auto_wrapping=False)  # 1줄
     border = c.TextBorder(color=(0.0, 0.0, 0.0), width=40.0)
     clip = c.ClipSettings(transform_y=-0.82)  # 화면 하단
 
     script.add_track(c.TrackType.text, "자막")
     n = 0
     for seg in segments:
-        text = seg["text"].strip()
+        # 끝 마침표는 자막에서 빼는 게 원칙(?, ! 등은 유지)
+        text = seg["text"].strip().rstrip(".").rstrip()
         if not text:
             continue
         tl_start = _map_to_timeline(seg["start"], keep_segments)

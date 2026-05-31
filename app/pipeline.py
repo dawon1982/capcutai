@@ -21,9 +21,9 @@ DRAFT_ROOT = os.path.expanduser(
 MIN_STEP_SECONDS = 0.5  # 캐시 hit으로 즉시 끝나도 스테퍼 애니메이션이 보이도록 최소 지연
 
 NOISE_DB = -30.0
-MIN_SILENCE_DEFAULT = 0.5  # 이보다 긴 쉼만 컷(검토 화면 슬라이더로 조절)
+MIN_SILENCE_DEFAULT = 0.3  # 이보다 긴 쉼만 컷(검토 화면 슬라이더로 0.1까지 조절)
 MIN_KEEP = 0.2
-KEEP_PAD = 0.2  # 컷 양옆 여유(말 끝소리·호흡 보존, 검토 화면 슬라이더로 조절)
+KEEP_PAD = 0.1  # 컷 양옆 여유. 단어 잘림은 snap_keeps_to_words가 막으므로 작게(슬라이더 조절)
 
 
 def safe_draft_name(filename: str) -> str:
