@@ -223,14 +223,9 @@
       </div>
       <div class="rev-body">
         <div class="sens">
-          <label>이보다 긴 쉼만 자르기</label>
-          <input id="sens" type="range" min="0.1" max="1.2" step="0.05" value="0.3" />
-          <span id="sens-val" class="val">0.3s</span>
-        </div>
-        <div class="sens">
-          <label>말 끝 여유</label>
-          <input id="pad" type="range" min="0" max="0.5" step="0.05" value="0.1" />
-          <span id="pad-val" class="val">0.10s</span>
+          <label>컷 강도</label>
+          <input id="strength" type="range" min="0" max="100" step="5" value="65" />
+          <span id="strength-val" class="val">바짝 65%</span>
         </div>
         <div class="tl-meta">
           <span id="tl-time" class="mono">0:00.0</span>
@@ -385,10 +380,16 @@ const tlKeepsum = document.getElementById('tl-keepsum');
 const keepListEl = document.getElementById('keep-list');
 const keepMetaEl = document.getElementById('keep-meta');
 const buildBtn = document.getElementById('build-btn');
-const sensEl = document.getElementById('sens');
-const sensVal = document.getElementById('sens-val');
-const padEl = document.getElementById('pad');
-const padVal = document.getElementById('pad-val');
+const strengthEl = document.getElementById('strength');
+const strengthVal = document.getElementById('strength-val');
+const MIN_SILENCE = 0.15;  // 0.15초 이상 쉼은 모두 컷 대상(컷 강도=pad로 조절)
+
+function strengthLabel(s) {
+  const word = s >= 70 ? '바짝' : (s >= 35 ? '보통' : '여유');
+  return word + ' ' + s + '%';
+}
+function strengthToPad(s) { return Math.round(0.3 * (1 - s / 100) * 1000) / 1000; }
+function padToStrength(pad) { return Math.max(0, Math.min(100, Math.round((1 - pad / 0.3) * 100))); }
 
 function mergeKeeps(arr) {
   const a = arr.filter(k => k[1] > k[0]).sort((x, y) => x[0] - y[0]);
@@ -410,10 +411,9 @@ function showReview(jobId, v) {
   };
   player.src = '/api/video/' + jobId;
   tlDur.textContent = '/ ' + fmtTime(v.duration);
-  sensEl.value = v.min_silence || 0.5;
-  sensVal.textContent = (+sensEl.value).toFixed(1) + 's';
-  padEl.value = v.pad != null ? v.pad : 0.2;
-  padVal.textContent = (+padEl.value).toFixed(2) + 's';
+  const s0 = padToStrength(v.pad != null ? v.pad : 0.1);
+  strengthEl.value = s0;
+  strengthVal.textContent = strengthLabel(s0);
   document.getElementById('review').classList.add('show');
   resetEl.style.display = 'block';
   renderReview();
@@ -500,18 +500,16 @@ tlEl.addEventListener('click', e => {
   player.currentTime = clampT((e.clientX - rect.left) / rect.width * REVIEW.duration);
 });
 
-sensEl.addEventListener('input', () => { sensVal.textContent = (+sensEl.value).toFixed(1) + 's'; });
-padEl.addEventListener('input', () => { padVal.textContent = (+padEl.value).toFixed(2) + 's'; });
-sensEl.addEventListener('change', reanalyze);
-padEl.addEventListener('change', reanalyze);
+strengthEl.addEventListener('input', () => { strengthVal.textContent = strengthLabel(+strengthEl.value); });
+strengthEl.addEventListener('change', reanalyze);
 
 async function reanalyze() {
   if (!REVIEW) return;
-  sensEl.disabled = padEl.disabled = true;
+  strengthEl.disabled = true;
   try {
     const res = await fetch('/api/reanalyze/' + REVIEW.jobId, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ min_silence: +sensEl.value, pad: +padEl.value }),
+      body: JSON.stringify({ min_silence: MIN_SILENCE, pad: strengthToPad(+strengthEl.value) }),
     });
     if (res.ok) {
       const r = await res.json();
@@ -520,7 +518,7 @@ async function reanalyze() {
       renderReview();
     }
   } catch (e) { /* 무시 */ }
-  sensEl.disabled = padEl.disabled = false;
+  strengthEl.disabled = false;
 }
 
 document.addEventListener('keydown', e => {
