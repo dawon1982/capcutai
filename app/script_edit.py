@@ -118,6 +118,7 @@ def _merge(regions):
 
 
 _LEAD_NUM = re.compile(r"^\s*(\d+)[.)]\s+")
+_NUM_ONLY = re.compile(r"^\d+$")
 
 
 def strip_list_numbers(segments):
@@ -126,6 +127,7 @@ def strip_list_numbers(segments):
     실제 목록은 1부터 1씩 증가하는 연속 번호. 그 시퀀스를 벗어나는 번호는 가짜로 보고
     앞 'N.' 마커만 제거(텍스트는 유지). 번호 없는 문장(narration)이 나오면 시퀀스를
     리셋(새 목록은 다시 1부터). whisper가 목록 모드에 갇혀 5,5,6,7…을 계속 붙이는 환각 대응.
+    추가로 숫자만 남은 세그먼트('20' 등 점 없는 반복 환각)는 통째로 제거.
     """
     out = []
     expected = 1  # 다음에 와야 할 '진짜' 번호 (1부터 시작)
@@ -134,13 +136,16 @@ def strip_list_numbers(segments):
         m = _LEAD_NUM.match(text)
         if not m:
             expected = 1  # narration → 새 목록 대기
-            out.append(seg)
+            t = text
         elif int(m.group(1)) == expected:
             expected += 1  # 연속 증가 → 실제 목록 항목, 번호 유지
-            out.append(seg)
+            t = text
         else:
             expected = -1  # 시퀀스 이탈 → narration 리셋 전까지 이후 번호도 가짜
-            out.append({**seg, "text": _LEAD_NUM.sub("", text, count=1)})
+            t = _LEAD_NUM.sub("", text, count=1)
+        if _NUM_ONLY.match(_norm(t)):  # 숫자만 남은 환각 세그먼트('20' 등) 제거
+            t = ""
+        out.append(seg if t == text else {**seg, "text": t})
     return out
 
 

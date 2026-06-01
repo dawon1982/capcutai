@@ -137,7 +137,7 @@ async def build(job_id: str, payload: dict = Body(...)):
         raise HTTPException(400, "보존 구간이 비어 있습니다")
 
     draft_name = safe_draft_name(job["name"])
-    draft_path = await asyncio.to_thread(
+    draft_path, transcript = await asyncio.to_thread(
         build_draft_from_keeps, job["path"], draft_name, keeps,
         info, job["analysis"]["segments"],
     )
@@ -149,7 +149,7 @@ async def build(job_id: str, payload: dict = Body(...)):
         "n_cuts": len(keeps),
         "n_segments": len(job["analysis"]["segments"]),
         "n_filler": job["analysis"]["n_filler"],
-        "transcript": job["analysis"]["transcript"],
+        "transcript": transcript,  # 자막과 동일하게 정리된 대본
         "ng": job["analysis"]["ng"],
         "draft_name": draft_name,
         "draft_path": draft_path,

@@ -114,10 +114,13 @@ def recompute_keeps(video_path, duration, min_silence, segments, pad=KEEP_PAD):
 
 def build_draft_from_keeps(video_path, draft_name, keeps, info, segments):
     """검토 화면에서 사용자가 확정한 keeps로 캡컷 드래프트 생성.
-    자막은 잔말 제거 + 반복 컷 단어 제거 + whisper 가짜 목록번호 제거 + 끝마침표 제거본 사용."""
+    자막은 잔말 제거 + 반복 컷 단어 제거 + whisper 가짜 목록번호 제거 + 끝마침표 제거본 사용.
+    반환: (draft_path, 정리된 대본 텍스트) — 결과 카드 대본도 자막과 동일하게 정리."""
     repeat_cuts = find_repeat_cuts(segments)
     sub = strip_list_numbers(drop_words_in_spans(strip_fillers(segments), repeat_cuts))
-    return build_jumpcut_draft(
+    draft_path = build_jumpcut_draft(
         video_path, draft_name, keeps, DRAFT_ROOT,
         info["width"], info["height"], info["fps"], sub,
     )
+    clean_transcript = " ".join(s["text"].strip() for s in sub if s["text"].strip())
+    return draft_path, clean_transcript
