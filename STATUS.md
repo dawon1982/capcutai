@@ -21,7 +21,7 @@ tags: [video, capcut, whisper, fastapi]
 
 ## 2026-06-01
 
-- 회전 영상 대응(자막이 영상 아래 검은 여백에 생기는 문제). 원인: probe_media가 rotation 메타(-90 등)를 무시하고 저장 크기를 읽어 캔버스 방향이 실제 표시와 불일치 → 캡컷이 영상을 레터박스(검은 여백) → 자막(-0.82)이 아래 검은 영역에 떨어짐. probe_media가 rotation ±90/270이면 W/H 교환해 표시 방향 크기 반환. (단, pycapcut material은 여전히 저장 크기라 캔버스≠material — 캡컷 렌더 확인 필요. 안 되면 회전 굽기 re-encode로 후속.) 자막 자체는 캡션(type=subtitle) 맞음 확인.
+- 회전 영상 대응(자막이 영상 아래 검은 여백에 생기는 문제). 원인: probe_media가 rotation 메타(-90 등)를 무시하고 저장 크기를 읽어 캔버스 방향이 실제 표시와 불일치 → 캡컷이 영상을 레터박스(검은 여백) → 자막(-0.82)이 아래 검은 영역에 떨어짐. probe_media가 rotation ±90/270이면 W/H 교환해 표시 방향 크기 반환. + _finalize_draft에서 영상 소재(material) W/H가 캔버스와 뒤바뀐 경우 캔버스에 맞춰 패치(content·info json 일치). 재인코딩 없이 json 일관성 확보 — 캡컷 렌더로 확인 필요, 안 되면 회전 굽기(re-encode) 후속. 자막 자체는 캡션(type=subtitle) 맞음 확인.
 - 버그 수정: 긴 영상 자막 SegmentOverlap(500). 캡션 분할 후 whisper 세그먼트가 원본시간상 겹치거나 _us() 반올림으로 1µs 겹침 발생 → pycapcut add_segment가 거부 → 500. _add_subtitles에서 캡션 끝을 정수 µs(cursor_us)로 추적해 항상 이전 캡션 끝 이후에 배치(겹치면 건너뜀). 925MB·421s 실제영상에서 자막 200개·겹침 0·빌드 OK 확인.
 - 자막을 다시 캡션(자막) 타입으로 + 1줄 유지. 1줄 위해 auto_wrapping=False(type=text)로 했더니 캡컷에서 '자막'이 아니라 '텍스트'로 들어가는 문제. 해결: auto_wrapping=True(type=subtitle=캡션)로 되돌리고, 긴 문장을 단어 경계로 ≤16자 청크로 분할(_split_caption) → 각 캡션이 1줄. 글자수 비례로 타이밍 분배, 청크별 끝 마침표 제거. 실제영상 검증: type=subtitle, 최대16자, 끝마침표 0.
 - 결과 카드 '대본'도 자막과 동일하게 정리. 그동안 번호 정리(strip_list_numbers)는 자막에만 적용되고 대본 표시는 raw였음 → 사용자가 번호가 안 지워진 걸로 인지. build_draft_from_keeps가 정리된 대본 텍스트를 함께 반환, /api/build 응답·결과카드에 사용. 추가: 점 없는 맨숫자 반복 환각('20' 등) 제거 — 숫자만 남은 세그먼트는 통째로 비움. 9분 실제영상(179세그)에서 9,10,11,20×27 등 환각 확인된 케이스 대응.

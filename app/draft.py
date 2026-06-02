@@ -51,7 +51,23 @@ def _finalize_draft(draft_path: str) -> None:
     """
     content_path = os.path.join(draft_path, "draft_content.json")
     with open(content_path) as f:
-        duration = json.load(f).get("duration", 0)
+        content = json.load(f)
+    duration = content.get("duration", 0)
+
+    # 회전 영상 보정: pycapcut은 영상 소재 크기를 회전 무시한 저장 크기로 쓴다.
+    # 캔버스(회전 반영)와 W/H가 뒤바뀐 경우 소재 크기를 캔버스에 맞춰 일관성 확보
+    # (안 맞추면 캡컷이 영상을 레터박스 → 검은 여백).
+    canvas = content.get("canvas_config", {})
+    cw, ch = canvas.get("width"), canvas.get("height")
+    patched = False
+    if cw and ch:
+        for v in content.get("materials", {}).get("videos", []):
+            if v.get("width") == ch and v.get("height") == cw:
+                v["width"], v["height"] = cw, ch
+                patched = True
+    if patched:
+        with open(content_path, "w") as f:
+            json.dump(content, f, ensure_ascii=False)
 
     meta_path = os.path.join(draft_path, "draft_meta_info.json")
     with open(meta_path) as f:
