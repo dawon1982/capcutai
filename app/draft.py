@@ -63,17 +63,36 @@ def _finalize_draft(draft_path: str) -> None:
     shutil.copy(content_path, os.path.join(draft_path, "draft_info.json"))
 
 
+MAX_SUB_CHARS = 16  # 캡션 1줄 목표 글자 수(이보다 길면 짧게 끊음)
+
+
+def _split_caption(text: str, max_chars: int = MAX_SUB_CHARS):
+    """긴 자막을 단어 경계에서 max_chars 이하 줄들로 분할(캡션 1줄 유지용)."""
+    lines, cur = [], ""
+    for w in text.split():
+        if cur and len(cur) + 1 + len(w) > max_chars:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}" if cur else w
+    if cur:
+        lines.append(cur)
+    return lines or [text]
+
+
 def _add_subtitles(script, segments, keep_segments) -> int:
-    """ASR 세그먼트를 점프컷 타임라인에 매핑해 자막 트랙으로 추가. 추가한 자막 수 반환."""
-    style = c.TextStyle(size=8.0, color=(1.0, 1.0, 1.0), align=1, auto_wrapping=False)  # 1줄
+    """ASR 세그먼트를 점프컷 타임라인에 매핑해 자막(캡션) 트랙으로 추가. 추가한 자막 수 반환.
+    긴 문장은 짧게 끊어 각 캡션이 1줄이 되게 한다(캡션 타입 유지 + 1줄)."""
+    # auto_wrapping=True → 캡컷에서 '자막(캡션)' 타입. 짧게 끊으므로 실제로는 1줄.
+    style = c.TextStyle(size=8.0, color=(1.0, 1.0, 1.0), align=1,
+                        auto_wrapping=True, max_line_width=1.0)
     border = c.TextBorder(color=(0.0, 0.0, 0.0), width=40.0)
     clip = c.ClipSettings(transform_y=-0.82)  # 화면 하단
 
     script.add_track(c.TrackType.text, "자막")
     n = 0
     for seg in segments:
-        # 끝 마침표는 자막에서 빼는 게 원칙(?, ! 등은 유지)
-        text = seg["text"].strip().rstrip(".").rstrip()
+        text = seg["text"].strip()
         if not text:
             continue
         tl_start = _map_to_timeline(seg["start"], keep_segments)
@@ -81,15 +100,22 @@ def _add_subtitles(script, segments, keep_segments) -> int:
         dur = tl_end - tl_start
         if dur < MIN_SUB_SEC:
             continue
-        ts = c.TextSegment(
-            text,
-            c.Timerange(_us(tl_start), _us(dur)),
-            style=style,
-            border=border,
-            clip_settings=clip,
-        )
-        script.add_segment(ts, "자막")
-        n += 1
+        # 짧게 끊고, 각 캡션 끝 마침표 제거(?, ! 등은 유지)
+        chunks = [ch.rstrip().rstrip(".").rstrip() for ch in _split_caption(text)]
+        chunks = [ch for ch in chunks if ch]
+        if not chunks:
+            continue
+        total = sum(len(ch) for ch in chunks) or 1
+        t = tl_start
+        for ch in chunks:  # 글자 수 비례로 캡션 구간 분배
+            cdur = dur * (len(ch) / total)
+            ts = c.TextSegment(
+                ch, c.Timerange(_us(t), _us(cdur)),
+                style=style, border=border, clip_settings=clip,
+            )
+            script.add_segment(ts, "자막")
+            n += 1
+            t += cdur
     return n
 
 
