@@ -91,6 +91,8 @@ def _add_subtitles(script, segments, keep_segments) -> int:
 
     script.add_track(c.TrackType.text, "자막")
     n = 0
+    cursor_us = 0  # 마지막 캡션 끝(µs). whisper 세그먼트가 겹치면 캡션도 겹쳐 pycapcut이
+    # 거부하므로, 정수 µs로 항상 이전 캡션 끝 이후에 배치(반올림 1µs 겹침까지 방지).
     for seg in segments:
         text = seg["text"].strip()
         if not text:
@@ -108,14 +110,19 @@ def _add_subtitles(script, segments, keep_segments) -> int:
         total = sum(len(ch) for ch in chunks) or 1
         t = tl_start
         for ch in chunks:  # 글자 수 비례로 캡션 구간 분배
-            cdur = dur * (len(ch) / total)
+            seg_end = t + dur * (len(ch) / total)
+            start_us = max(_us(t), cursor_us)
+            end_us = _us(seg_end)
+            t = seg_end
+            if end_us - start_us < 50000:  # <0.05s: 앞 캡션과 겹쳐 공간 없음 → 건너뜀
+                continue
             ts = c.TextSegment(
-                ch, c.Timerange(_us(t), _us(cdur)),
+                ch, c.Timerange(start_us, end_us - start_us),
                 style=style, border=border, clip_settings=clip,
             )
             script.add_segment(ts, "자막")
             n += 1
-            t += cdur
+            cursor_us = end_us
     return n
 
 
