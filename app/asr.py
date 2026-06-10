@@ -22,9 +22,12 @@ def _content_hash(path: str) -> str:
     return h.hexdigest()[:16]
 
 
+ASR_OPTS_VERSION = "v2"  # transcribe 옵션이 바뀌면 올려서 옛 캐시 무효화
+
+
 def _cache_file(path: str) -> str:
     model_tag = MODEL.rsplit("/", 1)[-1]
-    key = f"{_content_hash(path)}_{model_tag}"
+    key = f"{_content_hash(path)}_{model_tag}_{ASR_OPTS_VERSION}"
     return os.path.join(CACHE_DIR, key + ".json")
 
 
@@ -36,6 +39,9 @@ def _transcribe_sync(path: str) -> dict:
         path_or_hf_repo=MODEL,
         language="ko",
         word_timestamps=True,
+        # 직전 문장에 조건화하면 한 번 빠진 패턴(목록 번호, 같은 문구)을 계속 따라 하는
+        # 환각이 생긴다('5. 5. 6. 7…', '20 20 20…'의 주범). 문장마다 독립 인식.
+        condition_on_previous_text=False,
     )
 
     segments = []
