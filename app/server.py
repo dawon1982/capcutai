@@ -90,6 +90,7 @@ async def stream(job_id: str):
                     "n_filler": data["n_filler"],
                     "min_silence": data["min_silence"],
                     "pad": data["pad"],
+                    "peaks": data["peaks"],
                 }}
                 yield f"data: {json.dumps(client, ensure_ascii=False)}\n\n"
             else:

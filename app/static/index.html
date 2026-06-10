@@ -125,7 +125,7 @@
     font-family: var(--mono); color: var(--green);
     font-variant-numeric: tabular-nums; flex: 0 0 auto;
   }
-  .ng-item .x { color: var(--muted); }
+  .ng-item .x { color: var(--muted); flex: 1; }
 
   /* 검토 화면 */
   .review { display: none; }
@@ -146,6 +146,12 @@
     background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
     overflow: hidden; cursor: pointer;
   }
+  #tl-wave { position: absolute; inset: 0; }
+  .cutprev {
+    display: flex; align-items: center; gap: 5px;
+    color: var(--muted); cursor: pointer; margin-left: 14px;
+  }
+  .cutprev input { accent-color: var(--green); }
   .tl-keep {
     position: absolute; top: 0; bottom: 0;
     background: rgba(34,197,94,0.22);
@@ -170,8 +176,8 @@
   .keep-row:first-child { border-top: 0; }
   .keep-row .t { font-family: var(--mono); color: var(--text); font-variant-numeric: tabular-nums; flex: 1; }
   .keep-row .dur { font-family: var(--mono); color: var(--muted); }
-  .keep-row .del { cursor: pointer; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; }
-  .keep-row .del:hover { color: var(--text); border-color: var(--dim); }
+  .del { cursor: pointer; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; flex: 0 0 auto; }
+  .del:hover { color: var(--text); border-color: var(--dim); }
   .rev-ng { margin-top: 16px; }
   .build-btn {
     width: 100%; margin-top: 18px; padding: 12px;
@@ -235,20 +241,22 @@
         <div class="tl-meta">
           <span id="tl-time" class="mono">0:00.0</span>
           <span id="tl-dur" class="mono muted">/ 0:00.0</span>
+          <label class="cutprev"><input type="checkbox" id="cutprev" /> 컷 미리보기</label>
           <span id="tl-keepsum"></span>
         </div>
         <div id="timeline" class="timeline">
+          <canvas id="tl-wave"></canvas>
           <div id="tl-blocks"></div>
           <div id="tl-pending" class="tl-in" style="display:none"></div>
           <div id="tl-head" class="tl-head"></div>
         </div>
         <div class="kbd-hint">
-          <b>space</b> 재생/정지 · <b>←</b> <b>→</b> 0.1초 (shift=프레임) · <b>[</b> 시작 <b>]</b> 끝 = 보존 구간 추가 · <b>delete</b> 재생헤드 구간 삭제
+          <b>space</b> 재생/정지 · <b>←</b> <b>→</b> 0.1초 (shift=프레임) · <b>[</b> 시작 <b>]</b> 끝 = 보존 구간 추가 · <b>delete</b> 재생헤드 구간 삭제 · <b>⌘Z</b> 되돌리기
         </div>
         <div class="keep-head">보존 구간 <span id="keep-meta" class="kmeta"></span></div>
         <div id="keep-list"></div>
         <div id="rev-ng" class="rev-ng" style="display:none">
-          <div class="keep-head">NG 의심 — 클릭하면 그 구간 제거</div>
+          <div class="keep-head">NG 의심 — 행 클릭=그 위치로 이동 · 제거=그 구간 삭제</div>
           <div id="rev-ng-list"></div>
         </div>
         <button id="build-btn" class="build-btn">드래프트 만들기</button>
@@ -407,6 +415,7 @@ function showReview(jobId, v) {
     keeps: mergeKeeps(v.keeps.map(k => [k[0], k[1]])),
     ng: v.ng || [], transcript: v.transcript,
     n_segments: v.n_segments, n_filler: v.n_filler, pendingIn: null,
+    peaks: v.peaks || [], history: [],
   };
   player.src = '/api/video/' + jobId;
   tlDur.textContent = '/ ' + fmtTime(v.duration);
@@ -417,18 +426,54 @@ function showReview(jobId, v) {
   document.getElementById('review').classList.add('show');
   resetEl.style.display = 'block';
   renderReview();
-  requestAnimationFrame(tick);
+  requestAnimationFrame(() => { drawWave(); tick(); });
+}
+
+function drawWave() {
+  const canvas = document.getElementById('tl-wave');
+  const ctx = canvas.getContext('2d');
+  const w = tlEl.clientWidth, h = tlEl.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!REVIEW || !REVIEW.peaks.length) return;
+  ctx.fillStyle = 'rgba(115,115,115,0.45)';
+  const n = REVIEW.peaks.length, bw = w / n;
+  for (let i = 0; i < n; i++) {
+    const bh = Math.max(1, REVIEW.peaks[i] * (h - 6));
+    ctx.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.4), bh);
+  }
+}
+window.addEventListener('resize', () => { if (REVIEW) drawWave(); });
+
+function pushHistory() {
+  REVIEW.history.push(JSON.parse(JSON.stringify(REVIEW.keeps)));
+  if (REVIEW.history.length > 50) REVIEW.history.shift();
+}
+function undo() {
+  if (!REVIEW || !REVIEW.history.length) return;
+  REVIEW.keeps = REVIEW.history.pop();
+  REVIEW.pendingIn = null;
+  renderReview();
 }
 
 function clampT(t) { return Math.max(0, Math.min(t, REVIEW.duration)); }
 function pct(t) { return (t / REVIEW.duration * 100) + '%'; }
-function addKeep(s, e) { REVIEW.keeps = mergeKeeps(REVIEW.keeps.concat([[s, e]])); }
+function addKeep(s, e) {
+  pushHistory();
+  REVIEW.keeps = mergeKeeps(REVIEW.keeps.concat([[s, e]]));
+}
 function removeKeepAt(t) {
-  const n = REVIEW.keeps.length;
+  if (!REVIEW.keeps.some(k => t >= k[0] && t <= k[1])) return;
+  pushHistory();
   REVIEW.keeps = REVIEW.keeps.filter(k => !(t >= k[0] && t <= k[1]));
-  if (REVIEW.keeps.length !== n) renderReview();
+  renderReview();
 }
 function removeKeepsOverlap(s, e) {
+  if (!REVIEW.keeps.some(k => k[0] < e && k[1] > s)) return;
+  pushHistory();
   REVIEW.keeps = REVIEW.keeps.filter(k => !(k[0] < e && k[1] > s));
   renderReview();
 }
@@ -462,7 +507,7 @@ function renderReview() {
     const t = document.createElement('span'); t.className = 't'; t.textContent = fmtTime(s) + ' – ' + fmtTime(e);
     const dur = document.createElement('span'); dur.className = 'dur'; dur.textContent = (e - s).toFixed(1) + 's';
     const del = document.createElement('span'); del.className = 'del'; del.textContent = '삭제';
-    del.addEventListener('click', () => { REVIEW.keeps.splice(i, 1); renderReview(); });
+    del.addEventListener('click', () => { pushHistory(); REVIEW.keeps.splice(i, 1); renderReview(); });
     row.append(t, dur, del);
     keepListEl.appendChild(row);
   });
@@ -478,8 +523,10 @@ function renderReview() {
       const row = document.createElement('div'); row.className = 'ng-item'; row.style.cursor = 'pointer';
       const t = document.createElement('span'); t.className = 't'; t.textContent = fmtTime(c.start) + '–' + fmtTime(c.end);
       const x = document.createElement('span'); x.className = 'x'; x.textContent = c.text;
-      row.append(t, x);
-      row.addEventListener('click', () => removeKeepsOverlap(c.start, c.end));
+      const del = document.createElement('span'); del.className = 'del'; del.textContent = '제거';
+      del.addEventListener('click', ev => { ev.stopPropagation(); removeKeepsOverlap(c.start, c.end); });
+      row.append(t, x, del);
+      row.addEventListener('click', () => { player.currentTime = clampT(c.start); });
       ngList.appendChild(row);
     });
     ngWrap.style.display = 'block';
@@ -488,7 +535,16 @@ function renderReview() {
 
 function tick() {
   if (!REVIEW) return;
-  const t = player.currentTime || 0;
+  let t = player.currentTime || 0;
+  // 컷 미리보기: 잘린 구간에 들어오면 다음 보존 구간으로 점프(= 결과처럼 재생)
+  if (document.getElementById('cutprev').checked && !player.paused) {
+    const inKeep = REVIEW.keeps.some(([s, e]) => t >= s && t < e);
+    if (!inKeep) {
+      const next = REVIEW.keeps.find(([s]) => s > t);
+      if (next) { player.currentTime = next[0] + 0.005; t = next[0]; }
+      else player.pause();
+    }
+  }
   tlHead.style.left = pct(t);
   tlTime.textContent = fmtTime(t);
   requestAnimationFrame(tick);
@@ -515,6 +571,7 @@ async function reanalyze() {
     });
     if (res.ok) {
       const r = await res.json();
+      pushHistory();
       REVIEW.keeps = mergeKeeps(r.keeps.map(k => [k[0], k[1]]));
       REVIEW.pendingIn = null;
       renderReview();
@@ -526,6 +583,9 @@ async function reanalyze() {
 document.addEventListener('keydown', e => {
   if (!REVIEW) return;
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault(); undo(); return;
+  }
   switch (e.key) {
     case ' ': e.preventDefault(); player.paused ? player.play() : player.pause(); break;
     case 'ArrowLeft': e.preventDefault(); player.currentTime = clampT(player.currentTime - (e.shiftKey ? 1 / REVIEW.fps : 0.1)); break;

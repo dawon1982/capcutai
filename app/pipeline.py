@@ -4,7 +4,7 @@ import re
 
 from app.asr import transcribe
 from app.draft import build_jumpcut_draft
-from app.probe import probe_media
+from app.probe import compute_peaks, probe_media
 from app.script_edit import (
     compute_keeps_from_words,
     drop_words_in_spans,
@@ -54,6 +54,7 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
         yield {"step": "silence", "status": "running"}
         t0 = loop.time()
         info = await asyncio.to_thread(probe_media, video_path)
+        peaks = await asyncio.to_thread(compute_peaks, video_path)
         silences = await asyncio.to_thread(
             detect_silence, video_path, noise, min_silence
         )
@@ -101,6 +102,7 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
             "n_filler": len(filler_cuts),
             "min_silence": min_silence,
             "pad": KEEP_PAD,
+            "peaks": peaks,
         }}
     except Exception as e:
         yield {"step": "error", "status": "error", "message": str(e)}

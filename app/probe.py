@@ -1,5 +1,27 @@
 import json
 import subprocess
+from array import array
+
+
+def compute_peaks(path: str, buckets: int = 1000):
+    """검토 화면 파형 표시용 진폭 피크(0~1) 리스트. 오디오 없으면 []."""
+    proc = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", path, "-vn",
+         "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+        capture_output=True,
+    )
+    raw = proc.stdout
+    if len(raw) < 2:
+        return []
+    samples = array("h")
+    samples.frombytes(raw[: len(raw) // 2 * 2])
+    n = len(samples)
+    step = max(1, n // buckets)
+    peaks = []
+    for i in range(0, n, step):
+        chunk = samples[i:i + step]
+        peaks.append(round(max(max(chunk), -min(chunk)) / 32768, 3))
+    return peaks[:buckets]
 
 
 def _rotation(stream) -> int:
