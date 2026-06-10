@@ -5,7 +5,9 @@ import re
 from app.asr import transcribe
 from app.draft import build_jumpcut_draft, captions_to_srt, compute_captions
 from app.probe import compute_peaks, probe_media
+from app import config as app_config
 from app.script_edit import (
+    apply_glossary,
     compute_keeps_from_words,
     drop_words_in_spans,
     find_filler_cuts,
@@ -65,11 +67,12 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
         yield {"step": "silence", "status": "done",
                "stats": {"n_silence": len(silences)}}
 
-        # 2) 음성 인식 (mlx-whisper, 세그먼트+단어)
+        # 2) 음성 인식 (mlx-whisper, 세그먼트+단어) + 용어 사전 교정
         yield {"step": "asr", "status": "running"}
         t0 = loop.time()
+        cfg = app_config.load()
         transcript = await transcribe(video_path)
-        segments = transcript["segments"]
+        segments = apply_glossary(transcript["segments"], cfg["glossary"])
         await _pad(t0)
         yield {"step": "asr", "status": "done",
                "stats": {"n_segments": len(segments)}}
@@ -77,7 +80,8 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
         # 3) 컷 결정: 단어 간격 1차(말 기준) + 잔말·즉시반복 자동 컷 + NG 후보(표시만)
         yield {"step": "filler", "status": "running"}
         t0 = loop.time()
-        filler_cuts = find_filler_cuts(segments)
+        fillers = set(cfg["fillers"])
+        filler_cuts = find_filler_cuts(segments, fillers)
         repeat_cuts = find_repeat_cuts(segments)
         words = [w for s in segments for w in s["words"]]
         if words:
@@ -98,7 +102,9 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
             "keeps": keeps,
             "segments": segments,
             "ng": ng,
-            "transcript": transcript["text"],
+            "transcript": " ".join(
+                s["text"].strip() for s in segments if s["text"].strip()
+            ),
             "n_filler": len(filler_cuts),
             "min_silence": min_silence,
             "pad": KEEP_PAD,
@@ -118,7 +124,8 @@ def recompute_keeps(video_path, duration, min_silence, segments, pad=KEEP_PAD):
     else:
         silences = detect_silence(video_path, NOISE_DB, min_silence)
         keeps = compute_keep_segments(duration, silences, MIN_KEEP, pad)
-    filler_cuts = find_filler_cuts(segments)
+    fillers = set(app_config.load()["fillers"])
+    filler_cuts = find_filler_cuts(segments, fillers)
     repeat_cuts = find_repeat_cuts(segments)
     return subtract_cuts(keeps, filler_cuts + repeat_cuts, MIN_KEEP)
 
@@ -127,8 +134,11 @@ def build_draft_from_keeps(video_path, draft_name, keeps, info, segments):
     """검토 화면에서 사용자가 확정한 keeps로 캡컷 드래프트 생성.
     자막은 잔말 제거 + 반복 컷 단어 제거 + whisper 가짜 목록번호 제거 + 끝마침표 제거본 사용.
     반환: (draft_path, 정리된 대본, SRT 문자열)."""
+    fillers = set(app_config.load()["fillers"])
     repeat_cuts = find_repeat_cuts(segments)
-    sub = strip_list_numbers(drop_words_in_spans(strip_fillers(segments), repeat_cuts))
+    sub = strip_list_numbers(
+        drop_words_in_spans(strip_fillers(segments, fillers), repeat_cuts)
+    )
     draft_path = build_jumpcut_draft(
         video_path, draft_name, keeps, DRAFT_ROOT,
         info["width"], info["height"], info["fps"], sub,

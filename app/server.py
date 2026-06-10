@@ -7,6 +7,7 @@ import uuid
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
+from app import config as app_config
 from app.pipeline import (
     build_draft_from_keeps,
     recompute_keeps,
@@ -76,6 +77,59 @@ def _sanitize_keeps(raw, duration: float):
             out.append((s, e))
     out.sort()
     return out
+
+
+@app.get("/api/settings")
+async def get_settings():
+    return app_config.load()
+
+
+@app.post("/api/settings")
+async def set_settings(payload: dict = Body(...)):
+    cfg = app_config.load()
+    if isinstance(payload.get("glossary"), list):
+        cfg["glossary"] = [str(t).strip()[:50]
+                           for t in payload["glossary"] if str(t).strip()][:500]
+    if isinstance(payload.get("fillers"), list):
+        cfg["fillers"] = [str(t).strip()[:20]
+                          for t in payload["fillers"] if str(t).strip()][:200]
+    if isinstance(payload.get("precision"), bool):
+        cfg["precision"] = payload["precision"]
+    app_config.save(cfg)
+    return cfg
+
+
+@app.post("/api/glossary-file")
+async def glossary_file(file: UploadFile = File(...)):
+    """엑셀(xlsx)/CSV/TXT에서 용어 일괄 추출 — 모든 셀/토큰을 용어로 취급."""
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(413, "파일이 너무 큽니다 (5MB 제한)")
+    terms = []
+    if ext == ".xlsx":
+        import io
+
+        from openpyxl import load_workbook
+        try:
+            wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        except Exception:
+            raise HTTPException(400, "엑셀 파일을 읽을 수 없습니다")
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                terms.extend(str(c) for c in row if c is not None)
+    elif ext in (".csv", ".txt"):
+        for line in raw.decode("utf-8-sig", errors="replace").splitlines():
+            terms.extend(line.split(","))
+    else:
+        raise HTTPException(400, "xlsx, csv, txt 파일만 지원합니다")
+    seen, clean = set(), []
+    for t in terms:
+        t = t.strip()
+        if t and t not in seen and len(t) <= 50:
+            seen.add(t)
+            clean.append(t)
+    return {"terms": clean[:500]}
 
 
 def _prune_old_jobs():

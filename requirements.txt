@@ -3,3 +3,5 @@ uvicorn==0.48.0
 python-multipart==0.0.29
 pycapcut==0.0.3
 mlx-whisper==0.4.3
+openpyxl==3.1.5
+silero-vad==6.2.1

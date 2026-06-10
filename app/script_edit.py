@@ -12,6 +12,98 @@ def _norm(text: str) -> str:
     return _PUNCT.sub("", text)
 
 
+def _lev1(a: str, b: str) -> bool:
+    """음절 단위 편집거리 ≤1 (잣말↔잔말, 모음↔무음)."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        return sum(x != y for x, y in zip(a, b)) == 1
+    if la > lb:
+        a, b, la, lb = b, a, lb, la
+    i = j = diff = 0
+    while i < la and j < lb:
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+        else:
+            j += 1
+            diff += 1
+            if diff > 1:
+                return False
+    return True
+
+
+def apply_glossary(segments, terms):
+    """용어 사전 기반 받아쓰기 교정: 단어 앞부분이 용어와 한 글자 이내로 다르면 용어로 치환.
+
+    initial_prompt는 환각 차단 옵션과 상충해 첫 윈도우에만 적용되므로,
+    전체 구간 교정은 이 패스가 책임진다. 조사가 붙은 형태(잣말을→잔말을)도 처리.
+    용어와 한 글자 차이인 일상어까지 교정될 수 있으니 용어 선정은 사용자 몫.
+    """
+    terms = [t.strip() for t in terms if len(t.strip()) >= 2]
+    if not terms:
+        return segments
+    term_set = set(terms)
+
+    def _jamo(ch):
+        code = ord(ch) - 0xAC00
+        if 0 <= code < 11172:
+            cho, rem = divmod(code, 588)
+            jung, jong = divmod(rem, 28)
+            return (cho, jung, jong)
+        return (ch,)
+
+    def _jamo_diff(a: str, b: str) -> float:
+        """같은 길이 음절열의 자모 차이 수 (굿↔군=1, 굿↔잔=3) — 후보 중 최근접 선택용."""
+        if len(a) != len(b):
+            return 2.0  # 길이 다른(삽입/탈락) 케이스는 중간 점수
+        d = 0
+        for x, y in zip(a, b):
+            jx, jy = _jamo(x), _jamo(y)
+            d += (sum(p != q for p, q in zip(jx, jy))
+                  if len(jx) == len(jy) else 3)
+        return float(d)
+
+    def fix(tok: str) -> str:
+        core = _norm(tok)
+        if len(core) < 2:
+            return tok
+        cands = []
+        for t in terms:
+            for length in (len(t), len(t) + 1, len(t) - 1):
+                if length < 2 or length > len(core):
+                    continue
+                pre = core[:length]
+                if pre in term_set or pre == t:
+                    return tok  # 이미 올바른 용어
+                if _lev1(pre, t) and pre in tok:
+                    cands.append((_jamo_diff(pre, t), pre, t))
+        if cands:
+            score, pre, t = min(cands, key=lambda x: x[0])
+            if score <= 2:  # 자모 2개 초과로 다르면 교정 보류(오교정 방지)
+                return tok.replace(pre, t, 1)
+        return tok
+
+    out = []
+    for seg in segments:
+        words = seg.get("words", [])
+        if words:
+            nwords = [{**w, "word": fix(w["word"])} for w in words]
+            if any(n["word"] != w["word"] for n, w in zip(nwords, words)):
+                out.append({**seg, "words": nwords,
+                            "text": "".join(w["word"] for w in nwords).strip()})
+            else:
+                out.append(seg)
+        else:
+            toks = seg["text"].split(" ")
+            ntoks = [fix(t) for t in toks]
+            out.append({**seg, "text": " ".join(ntoks)} if ntoks != toks else seg)
+    return out
+
+
 def find_filler_cuts(segments, fillers=None):
     """단어 타임스탬프에서 군말 구간 [(start, end)] 추출 (원본 시간).
 

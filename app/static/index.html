@@ -194,6 +194,24 @@
   }
   .srt-btn:hover { border-color: var(--dim); color: var(--text); }
 
+  .setbox summary {
+    padding: 13px 18px; font-size: 13px; color: var(--muted);
+    cursor: pointer; list-style: none; user-select: none;
+  }
+  .setbox summary::-webkit-details-marker { display: none; }
+  .setbox summary::before { content: '▸  '; color: var(--dim); }
+  .setbox[open] summary::before { content: '▾  '; }
+  .setbox[open] summary { color: var(--text); border-bottom: 1px solid var(--line); }
+  .set-body { padding: 14px 18px 18px; }
+  .set-body .k { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .set-body textarea {
+    width: 100%; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; color: var(--text); font-family: inherit; font-size: 13px;
+    padding: 8px 10px; resize: vertical; line-height: 1.6;
+  }
+  .set-body textarea:focus { outline: none; border-color: var(--dim); }
+  .set-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+
   .err { padding: 16px 18px; color: #ef4444; font-family: var(--mono); font-size: 12px; display: none; }
   .err.show { display: block; }
 
@@ -219,6 +237,26 @@
     <div id="filename" class="file"></div>
     <input id="file" type="file" accept=".mp4,.mov,.m4v,video/mp4,video/quicktime" hidden />
   </div>
+
+  <details id="settings" class="card setbox">
+    <summary>설정 — 용어 사전 · 잔말 단어 · 정밀도</summary>
+    <div class="set-body">
+      <div class="k">용어 사전 <span class="kmeta">자주 나오는 용어를 알려주면 받아쓰기 오타가 줄어듭니다 (쉼표·줄바꿈 구분)</span></div>
+      <textarea id="set-glossary" rows="3" placeholder="캡컷, 잔말, 무음, 기초대사량, 코르티솔"></textarea>
+      <div class="set-row">
+        <button id="gloss-file-btn" class="srt-btn" type="button" style="margin-top:0">엑셀/CSV 불러오기</button>
+        <input id="gloss-file" type="file" accept=".xlsx,.csv,.txt" hidden />
+        <span id="gloss-file-msg" class="kmeta"></span>
+      </div>
+      <div class="k" style="margin-top:16px">잔말 단어 <span class="kmeta">자동으로 잘라낼 군말</span></div>
+      <textarea id="set-fillers" rows="2"></textarea>
+      <label class="cutprev" style="margin:14px 0 0"><input type="checkbox" id="set-precision" /> 고정밀 인식 — 정확도↑ 속도↓ (첫 사용 시 모델 약 3GB 다운로드)</label>
+      <div class="set-row" style="margin-top:14px">
+        <button id="set-save" class="srt-btn" type="button" style="margin-top:0">저장</button>
+        <span id="set-msg" class="kmeta"></span>
+      </div>
+    </div>
+  </details>
 
   <div id="panel" class="card hidden">
     <div class="steps">
@@ -349,6 +387,7 @@ async function start(file) {
   const { job_id } = await res.json();
 
   dropEl.classList.add('hidden');
+  document.getElementById('settings').classList.add('hidden');
   panel.classList.remove('hidden');
 
   const es = new EventSource('/api/stream/' + job_id);
@@ -665,6 +704,55 @@ function showError(msg) {
 function safeMsg(t) {
   try { return JSON.parse(t).detail || t; } catch { return t; }
 }
+
+// ---- 설정 (용어 사전 · 잔말 · 정밀도) ----
+const setGloss = document.getElementById('set-glossary');
+const setFillers = document.getElementById('set-fillers');
+const setPrecision = document.getElementById('set-precision');
+
+function parseTerms(text) {
+  return [...new Set(text.split(/[\n,]/).map(t => t.trim()).filter(Boolean))];
+}
+
+fetch('/api/settings').then(r => r.json()).then(cfg => {
+  setGloss.value = (cfg.glossary || []).join(', ');
+  setFillers.value = (cfg.fillers || []).join(', ');
+  setPrecision.checked = !!cfg.precision;
+}).catch(() => {});
+
+document.getElementById('set-save').addEventListener('click', async () => {
+  const msg = document.getElementById('set-msg');
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        glossary: parseTerms(setGloss.value),
+        fillers: parseTerms(setFillers.value),
+        precision: setPrecision.checked,
+      }),
+    });
+    msg.textContent = res.ok ? '저장됨 — 다음 영상 처리부터 적용' : '저장 실패';
+  } catch { msg.textContent = '저장 실패'; }
+  setTimeout(() => { msg.textContent = ''; }, 5000);
+});
+
+const glossFile = document.getElementById('gloss-file');
+document.getElementById('gloss-file-btn').addEventListener('click', () => glossFile.click());
+glossFile.addEventListener('change', async () => {
+  const f = glossFile.files[0];
+  if (!f) return;
+  const msg = document.getElementById('gloss-file-msg');
+  const fd = new FormData();
+  fd.append('file', f);
+  try {
+    const res = await fetch('/api/glossary-file', { method: 'POST', body: fd });
+    if (!res.ok) { msg.textContent = safeMsg(await res.text()); return; }
+    const { terms } = await res.json();
+    setGloss.value = [...new Set([...parseTerms(setGloss.value), ...terms])].join(', ');
+    msg.textContent = terms.length + '개 용어 불러옴 — 저장을 눌러 적용하세요';
+  } catch { msg.textContent = '읽기 실패'; }
+  glossFile.value = '';
+});
 </script>
 </body>
 </html>
