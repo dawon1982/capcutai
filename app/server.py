@@ -262,6 +262,11 @@ async def build(job_id: str, payload: dict = Body(...)):
     return resp
 
 
+@app.get("/favicon.png")
+async def favicon():
+    return FileResponse(os.path.join(STATIC, "favicon.png"))
+
+
 @app.get("/")
 async def index():
     return FileResponse(os.path.join(STATIC, "index.html"))

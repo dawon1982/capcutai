@@ -193,6 +193,8 @@ def find_ng_candidates(segments, threshold: float = 0.8):
                 "start": a["start"],
                 "end": a["end"],
                 "text": a["text"],
+                "alt_start": b["start"],  # 뒤 테이크(보통 이걸 남김)
+                "alt_end": b["end"],
                 "similarity": round(sim, 2),
             })
     return cands

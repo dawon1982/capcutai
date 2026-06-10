@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>캡컷 에이전트</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
 <style>
   :root {
     --bg: #0a0a0a;
@@ -301,7 +302,7 @@
         <div class="keep-head">보존 구간 <span id="keep-meta" class="kmeta"></span></div>
         <div id="keep-list"></div>
         <div id="rev-ng" class="rev-ng" style="display:none">
-          <div class="keep-head">NG 의심 — 행 클릭=그 위치로 이동 · 제거=그 구간 삭제</div>
+          <div class="keep-head">NG 의심(같은 말 반복) — 행 클릭=앞 테이크 재생 · ▶뒤=뒤 테이크 재생 · 들어보고 한쪽 제거(보통 앞이 NG)</div>
           <div id="rev-ng-list"></div>
         </div>
         <button id="build-btn" class="build-btn">드래프트 만들기</button>
@@ -590,12 +591,20 @@ function renderReview() {
     const ngList = document.getElementById('rev-ng-list');
     ngList.innerHTML = '';
     REVIEW.ng.forEach(c => {
+      const altS = c.alt_start != null ? c.alt_start : c.end;
+      const altE = c.alt_end != null ? c.alt_end : c.end + 3;
       const row = document.createElement('div'); row.className = 'ng-item'; row.style.cursor = 'pointer';
       const t = document.createElement('span'); t.className = 't'; t.textContent = fmtTime(c.start) + '–' + fmtTime(c.end);
       const x = document.createElement('span'); x.className = 'x'; x.textContent = c.text;
-      const del = document.createElement('span'); del.className = 'del'; del.textContent = '제거';
-      del.addEventListener('click', ev => { ev.stopPropagation(); removeKeepsOverlap(c.start, c.end); });
-      row.append(t, x, del);
+      const mk = (label, fn) => {
+        const b = document.createElement('span'); b.className = 'del'; b.textContent = label;
+        b.addEventListener('click', ev => { ev.stopPropagation(); fn(); });
+        return b;
+      };
+      row.append(t, x,
+        mk('▶뒤', () => { player.currentTime = clampT(altS); }),
+        mk('앞 제거', () => removeKeepsOverlap(c.start, c.end)),
+        mk('뒤 제거', () => removeKeepsOverlap(altS, altE)));
       row.addEventListener('click', () => { player.currentTime = clampT(c.start); });
       ngList.appendChild(row);
     });

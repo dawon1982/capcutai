@@ -100,6 +100,37 @@ SUB_HOLD = 0.7  # 캡션을 다음 캡션 시작까지(최대 HOLD초) 유지해
 MIN_RAW_SUB = 0.1  # 매핑 후 실 발화 구간이 이보다 짧으면(=대부분 컷됨) 캡션 생략
 
 
+def _group_words(words, max_chars=MAX_SUB_CHARS):
+    """단어들을 캡션 1줄(≤max_chars) 단위로 묶되, 어미·조사·문장부호 등
+    자연스러운 끊김 지점에서 우선 분할(글자수 위치에서 기계적으로 끊지 않게)."""
+    groups, cur, cur_len, brk = [], [], 0, -1
+    for w in words:
+        tok = w["word"].strip()
+        add = len(tok) + (1 if cur else 0)
+        if cur and cur_len + add > max_chars:
+            if 0 <= brk < len(cur) - 1:  # 자연 분할점이 있으면 거기서 끊기
+                groups.append(cur[:brk + 1])
+                cur = cur[brk + 1:]
+            else:
+                groups.append(cur)
+                cur = []
+            cur_len = sum(len(x["word"].strip()) for x in cur) + max(0, len(cur) - 1)
+            brk = -1
+            add = len(tok) + (1 if cur else 0)
+            if cur and cur_len + add > max_chars:  # 남은 조각도 넘치면 통째로 확정
+                groups.append(cur)
+                cur, cur_len = [], 0
+                add = len(tok)
+        cur.append(w)
+        cur_len += add
+        core = tok.rstrip(".,?!…\"'")
+        if cur_len >= 6 and (tok[-1:] in ".,?!…" or (core and core[-1] in "요다죠까데고서며면")):
+            brk = len(cur) - 1
+    if cur:
+        groups.append(cur)
+    return groups
+
+
 def compute_captions(segments, keep_segments):
     """단어 타임스탬프 기반 캡션 목록 [[text, tl_start, tl_end], ...] 생성.
 
@@ -114,19 +145,7 @@ def compute_captions(segments, keep_segments):
             continue
         words = [w for w in seg.get("words", []) if w["word"].strip()]
         if words:
-            groups, cur, cur_len = [], [], 0
-            for w in words:
-                tok = w["word"].strip()
-                add = len(tok) + (1 if cur else 0)
-                if cur and cur_len + add > MAX_SUB_CHARS:
-                    groups.append(cur)
-                    cur, cur_len = [w], len(tok)
-                else:
-                    cur.append(w)
-                    cur_len += add
-            if cur:
-                groups.append(cur)
-            for g in groups:
+            for g in _group_words(words):
                 gtext = "".join(x["word"] for x in g).strip().rstrip(".").rstrip()
                 if not gtext:
                     continue
