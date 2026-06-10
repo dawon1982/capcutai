@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 import uuid
 
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
@@ -19,24 +20,46 @@ STATIC = os.path.join(BASE, "static")
 os.makedirs(UPLOADS, exist_ok=True)
 
 ALLOWED_EXT = {".mp4", ".mov", ".m4v"}
+MAX_UPLOAD_BYTES = 8 * 1024 ** 3  # 폭주 방지 상한(일반 토킹영상엔 충분)
+JOB_TTL_SEC = 48 * 3600  # 이보다 오래된 미완료 잡은 새 업로드 때 정리
+JOBS_FILE = os.path.join(UPLOADS, "jobs.json")
 
 
-def _clear_uploads():
-    """이전 세션의 남은 업로드 정리. 빌드된 드래프트는 미디어를 드래프트 폴더로
-    따로 반입(하드링크/복사)하므로 업로드 원본을 지워도 안전."""
+def _save_jobs():
+    """잡·분석 결과를 디스크에 영속화 — 서버 재시작 후에도 검토 이어가기."""
+    try:
+        with open(JOBS_FILE, "w") as f:
+            json.dump(_jobs, f, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def _load_jobs() -> dict:
+    try:
+        with open(JOBS_FILE) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {jid: j for jid, j in data.items() if os.path.isfile(j.get("path", ""))}
+
+
+def _clear_uploads(keep_paths):
+    """살아있는 잡이 참조하지 않는 업로드 잔여물만 정리. 빌드된 드래프트는
+    미디어를 드래프트 폴더로 따로 반입(하드링크/복사)하므로 원본을 지워도 안전."""
+    keep = {os.path.abspath(p) for p in keep_paths} | {os.path.abspath(JOBS_FILE)}
     try:
         for f in os.listdir(UPLOADS):
-            p = os.path.join(UPLOADS, f)
-            if os.path.isfile(p):
+            p = os.path.abspath(os.path.join(UPLOADS, f))
+            if os.path.isfile(p) and p not in keep:
                 os.remove(p)
     except OSError:
         pass
 
 
-_clear_uploads()  # 디스크 누적 방지(잡은 메모리 상주라 재시작 시 어차피 사라짐)
+_jobs: dict[str, dict] = _load_jobs()
+_clear_uploads(j["path"] for j in _jobs.values())
 
 app = FastAPI(title="캡컷 에이전트")
-_jobs: dict[str, dict] = {}
 
 
 def _sanitize_keeps(raw, duration: float):
@@ -55,17 +78,35 @@ def _sanitize_keeps(raw, duration: float):
     return out
 
 
+def _prune_old_jobs():
+    now = time.time()
+    for jid in [j for j, v in _jobs.items() if now - v.get("ts", now) > JOB_TTL_SEC]:
+        try:
+            os.remove(_jobs[jid]["path"])
+        except OSError:
+            pass
+        _jobs.pop(jid, None)
+
+
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)):
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXT:
         raise HTTPException(400, f"지원 형식: mp4, mov, m4v (받은 형식: {ext or '없음'})")
+    _prune_old_jobs()
     job_id = uuid.uuid4().hex
     dest = os.path.join(UPLOADS, job_id + ext)
+    total = 0
     with open(dest, "wb") as f:
         while chunk := await file.read(1 << 20):
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                f.close()
+                os.remove(dest)
+                raise HTTPException(413, "파일이 너무 큽니다 (8GB 제한)")
             f.write(chunk)
-    _jobs[job_id] = {"path": dest, "name": file.filename}
+    _jobs[job_id] = {"path": dest, "name": file.filename, "ts": time.time()}
+    _save_jobs()
     return {"job_id": job_id, "filename": file.filename}
 
 
@@ -80,6 +121,7 @@ async def stream(job_id: str):
             if ev.get("step") == "ready":
                 data = ev["data"]
                 job["analysis"] = data  # segments(words 포함)·info는 서버 보관
+                _save_jobs()
                 client = {"step": "ready", "video": {
                     "duration": round(data["info"]["duration"], 3),
                     "fps": data["info"]["fps"],
@@ -138,7 +180,7 @@ async def build(job_id: str, payload: dict = Body(...)):
         raise HTTPException(400, "보존 구간이 비어 있습니다")
 
     draft_name = safe_draft_name(job["name"])
-    draft_path, transcript = await asyncio.to_thread(
+    draft_path, transcript, srt = await asyncio.to_thread(
         build_draft_from_keeps, job["path"], draft_name, keeps,
         info, job["analysis"]["segments"],
     )
@@ -151,6 +193,7 @@ async def build(job_id: str, payload: dict = Body(...)):
         "n_segments": len(job["analysis"]["segments"]),
         "n_filler": job["analysis"]["n_filler"],
         "transcript": transcript,  # 자막과 동일하게 정리된 대본
+        "srt": srt,
         "ng": job["analysis"]["ng"],
         "draft_name": draft_name,
         "draft_path": draft_path,
@@ -161,6 +204,7 @@ async def build(job_id: str, payload: dict = Body(...)):
     except OSError:
         pass
     _jobs.pop(job_id, None)
+    _save_jobs()
     return resp
 
 

@@ -159,6 +159,21 @@ def compute_captions(segments, keep_segments):
     return caps
 
 
+def captions_to_srt(caps) -> str:
+    """캡션 목록 → SRT 문자열 (유튜브 등 자막 파일로 활용)."""
+    def ts(sec):
+        ms = int(round(sec * 1000))
+        h, rem = divmod(ms, 3600000)
+        m, rem = divmod(rem, 60000)
+        s, ms = divmod(rem, 1000)
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+    lines = []
+    for i, (text, a, b) in enumerate(caps, 1):
+        lines.append(f"{i}\n{ts(a)} --> {ts(b)}\n{text}\n")
+    return "\n".join(lines)
+
+
 def _add_subtitles(script, segments, keep_segments) -> int:
     """캡션 목록을 자막 트랙으로 추가. 추가한 자막 수 반환."""
     # auto_wrapping=True → 캡컷에서 '자막(캡션)' 타입. 짧게 끊으므로 실제로는 1줄.

@@ -187,6 +187,13 @@
   .build-btn:hover { filter: brightness(1.08); }
   .build-btn:disabled { opacity: .5; cursor: default; }
 
+  .srt-btn {
+    margin-top: 12px; background: transparent; border: 1px solid var(--line);
+    color: var(--muted); font-size: 12px; padding: 8px 16px; border-radius: 6px;
+    cursor: pointer; font-family: inherit;
+  }
+  .srt-btn:hover { border-color: var(--dim); color: var(--text); }
+
   .err { padding: 16px 18px; color: #ef4444; font-family: var(--mono); font-size: 12px; display: none; }
   .err.show { display: block; }
 
@@ -285,6 +292,7 @@
         <div class="k">캡컷 드래프트</div>
         <div id="r-name" class="chip">–</div>
         <div class="open-hint">캡컷을 <b>완전히 종료 후 다시 열면</b> 목록에 나타납니다. 재생해서 직접 확인하세요.</div>
+        <button id="srt-btn" class="srt-btn" style="display:none">SRT 자막 파일 다운로드</button>
       </div>
     </div>
   </div>
@@ -310,12 +318,23 @@ fileEl.addEventListener('change', () => { if (fileEl.files[0]) start(fileEl.file
 ['dragleave','drop'].forEach(e => dropEl.addEventListener(e, ev => { ev.preventDefault(); dropEl.classList.remove('over'); }));
 dropEl.addEventListener('drop', ev => { const f = ev.dataTransfer.files[0]; if (f) start(f); });
 
+const stepTimers = {};
 function setStep(step, status) {
   const el = document.querySelector(`.step[data-step="${step}"]`);
   if (!el) return;
   el.classList.remove('running','done','skipped','error');
   el.classList.add(status);
-  el.querySelector('.state').textContent = STATE_LABEL[status] || '';
+  const state = el.querySelector('.state');
+  clearInterval(stepTimers[step]);
+  if (status === 'running') {
+    const t0 = Date.now();
+    state.textContent = '처리 중';
+    stepTimers[step] = setInterval(() => {  // 긴 영상 인식이 멈춘 듯 보이지 않게 경과 표시
+      state.textContent = '처리 중 ' + Math.round((Date.now() - t0) / 1000) + 's';
+    }, 1000);
+  } else {
+    state.textContent = STATE_LABEL[status] || '';
+  }
 }
 
 async function start(file) {
@@ -369,6 +388,18 @@ function showResult(r) {
       list.append(row);
     });
     document.getElementById('ng-row').style.display = 'block';
+  }
+  if (r.srt) {
+    const btn = document.getElementById('srt-btn');
+    btn.style.display = 'inline-block';
+    btn.onclick = () => {
+      const blob = new Blob([r.srt], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (r.draft_name || 'subtitles') + '.srt';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
   }
   resultEl.classList.add('show');
   resetEl.style.display = 'block';

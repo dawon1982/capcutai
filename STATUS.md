@@ -3,7 +3,7 @@ name: capcutai
 description: 캡컷 에이전트 — 한국어 토킹영상 자동편집기 (mp4/mov→캡컷 드래프트)
 status: done
 progress: 100
-updated: 2026-05-30
+updated: 2026-06-10
 tags: [video, capcut, whisper, fastapi]
 ---
 
@@ -18,6 +18,10 @@ tags: [video, capcut, whisper, fastapi]
 - [x] 배포: 애플 실리콘 맥 지인 공유용 설치 키트(install/run .command + README) + GitHub Public (github.com/dawon1982/capcutai)
 
 # 개발 로그
+
+## 2026-06-10
+
+- 정확도·그래픽·활용성·편의성·보안 개선 라운드(5건). (1) ASR 환각 근본 차단: condition_on_previous_text=False — 9분 실영상에서 가짜 번호 수십개→0, ' 20 ' 반복 27→0, 세그 179→87 정상화. 캐시 키 v2. (2) 자막 타이밍을 단어 실발화 시각 기반으로(compute_captions) — 말 속도 불균일해도 싱크 유지, 캡션 틈 메움. (3) 컷을 단어 간격 1차로 재설계(compute_keeps_from_words) — 에너지 기반 한계(숨소리·잡음 오인) 구조적 해소, 끝잘림 0건, 슬라이더 재분석 수 초→4ms, 말 없으면 무음 폴백. (4) 검토 화면: 파형 캔버스, '컷 미리보기' 재생(잘린 구간 건너뜀), ⌘Z 되돌리기, NG 행 클릭=이동/제거 버튼 분리. (5) SRT 자막 다운로드, 스테퍼 경과시간 표시, 잡·분석 jobs.json 영속화(서버 재시작 후 이어서), 업로드 8GB 상한+48h TTL 정리. 전 항목 실데이터/브라우저 검증.
 
 ## 2026-06-01
 
