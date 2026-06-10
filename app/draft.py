@@ -96,9 +96,71 @@ def _split_caption(text: str, max_chars: int = MAX_SUB_CHARS):
     return lines or [text]
 
 
+SUB_HOLD = 0.7  # 캡션을 다음 캡션 시작까지(최대 HOLD초) 유지해 깜빡임 방지
+MIN_RAW_SUB = 0.1  # 매핑 후 실 발화 구간이 이보다 짧으면(=대부분 컷됨) 캡션 생략
+
+
+def compute_captions(segments, keep_segments):
+    """단어 타임스탬프 기반 캡션 목록 [[text, tl_start, tl_end], ...] 생성.
+
+    글자수 비례 추정이 아니라 각 캡션에 속한 단어의 실제 발화 시각을 점프컷
+    타임라인에 매핑해 배치한다(자막 싱크 정확도). 단어 정보가 없는 세그먼트만
+    글자수 비례 폴백.
+    """
+    caps = []
+    for seg in segments:
+        text = seg["text"].strip()
+        if not text:
+            continue
+        words = [w for w in seg.get("words", []) if w["word"].strip()]
+        if words:
+            groups, cur, cur_len = [], [], 0
+            for w in words:
+                tok = w["word"].strip()
+                add = len(tok) + (1 if cur else 0)
+                if cur and cur_len + add > MAX_SUB_CHARS:
+                    groups.append(cur)
+                    cur, cur_len = [w], len(tok)
+                else:
+                    cur.append(w)
+                    cur_len += add
+            if cur:
+                groups.append(cur)
+            for g in groups:
+                gtext = "".join(x["word"] for x in g).strip().rstrip(".").rstrip()
+                if not gtext:
+                    continue
+                ts = _map_to_timeline(g[0]["start"], keep_segments)
+                te = _map_to_timeline(g[-1]["end"], keep_segments)
+                if te - ts < MIN_RAW_SUB:  # 단어들이 컷 안에 들어가 사라진 캡션
+                    continue
+                caps.append([gtext, ts, te])
+        else:
+            tl_start = _map_to_timeline(seg["start"], keep_segments)
+            tl_end = _map_to_timeline(seg["end"], keep_segments)
+            dur = tl_end - tl_start
+            if dur < MIN_SUB_SEC:
+                continue
+            chunks = [ch.rstrip().rstrip(".").rstrip() for ch in _split_caption(text)]
+            chunks = [ch for ch in chunks if ch]
+            total = sum(len(ch) for ch in chunks) or 1
+            t = tl_start
+            for ch in chunks:
+                e = t + dur * (len(ch) / total)
+                caps.append([ch, t, e])
+                t = e
+    caps.sort(key=lambda x: x[1])
+    # 캡션 사이 짧은 틈은 다음 캡션 시작까지 끌어서 메움(깜빡임 방지)
+    for i, cap in enumerate(caps):
+        if i + 1 < len(caps):
+            cap[2] = max(cap[2], min(caps[i + 1][1], cap[2] + SUB_HOLD))
+        else:
+            cap[2] += 0.3
+    return caps
+
+
 def _add_subtitles(script, segments, keep_segments) -> int:
-    """ASR 세그먼트를 점프컷 타임라인에 매핑해 자막(캡션) 트랙으로 추가. 추가한 자막 수 반환.
-    긴 문장은 짧게 끊어 각 캡션이 1줄이 되게 한다(캡션 타입 유지 + 1줄)."""
+    """캡션 목록을 자막 트랙으로 추가. 추가한 자막 수 반환."""
     # auto_wrapping=True → 캡컷에서 '자막(캡션)' 타입. 짧게 끊으므로 실제로는 1줄.
     style = c.TextStyle(size=8.0, color=(1.0, 1.0, 1.0), align=1,
                         auto_wrapping=True, max_line_width=1.0)
@@ -107,38 +169,19 @@ def _add_subtitles(script, segments, keep_segments) -> int:
 
     script.add_track(c.TrackType.text, "자막")
     n = 0
-    cursor_us = 0  # 마지막 캡션 끝(µs). whisper 세그먼트가 겹치면 캡션도 겹쳐 pycapcut이
-    # 거부하므로, 정수 µs로 항상 이전 캡션 끝 이후에 배치(반올림 1µs 겹침까지 방지).
-    for seg in segments:
-        text = seg["text"].strip()
-        if not text:
+    cursor_us = 0  # 정수 µs로 항상 이전 캡션 끝 이후에 배치(겹침·반올림 1µs 겹침 방지)
+    for text, ts_sec, te_sec in compute_captions(segments, keep_segments):
+        start_us = max(_us(ts_sec), cursor_us)
+        end_us = _us(te_sec)
+        if end_us - start_us < _us(MIN_SUB_SEC):
             continue
-        tl_start = _map_to_timeline(seg["start"], keep_segments)
-        tl_end = _map_to_timeline(seg["end"], keep_segments)
-        dur = tl_end - tl_start
-        if dur < MIN_SUB_SEC:
-            continue
-        # 짧게 끊고, 각 캡션 끝 마침표 제거(?, ! 등은 유지)
-        chunks = [ch.rstrip().rstrip(".").rstrip() for ch in _split_caption(text)]
-        chunks = [ch for ch in chunks if ch]
-        if not chunks:
-            continue
-        total = sum(len(ch) for ch in chunks) or 1
-        t = tl_start
-        for ch in chunks:  # 글자 수 비례로 캡션 구간 분배
-            seg_end = t + dur * (len(ch) / total)
-            start_us = max(_us(t), cursor_us)
-            end_us = _us(seg_end)
-            t = seg_end
-            if end_us - start_us < 50000:  # <0.05s: 앞 캡션과 겹쳐 공간 없음 → 건너뜀
-                continue
-            ts = c.TextSegment(
-                ch, c.Timerange(start_us, end_us - start_us),
-                style=style, border=border, clip_settings=clip,
-            )
-            script.add_segment(ts, "자막")
-            n += 1
-            cursor_us = end_us
+        ts = c.TextSegment(
+            text, c.Timerange(start_us, end_us - start_us),
+            style=style, border=border, clip_settings=clip,
+        )
+        script.add_segment(ts, "자막")
+        n += 1
+        cursor_us = end_us
     return n
 
 

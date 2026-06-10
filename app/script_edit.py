@@ -121,18 +121,31 @@ _LEAD_NUM = re.compile(r"^\s*(\d+)[.)]\s+")
 _NUM_ONLY = re.compile(r"^\d+$")
 
 
+def _drop_lead_number_words(words, num: str):
+    """앞쪽 단어 토큰들이 목록 번호('5.' 등)를 이루면 그 토큰들을 제거."""
+    acc = ""
+    for i, w in enumerate(words):
+        acc += _norm(w["word"])
+        if acc == num:
+            return words[i + 1:]
+        if not num.startswith(acc):
+            break
+    return words
+
+
 def strip_list_numbers(segments):
     """whisper가 자동으로 붙인 가짜 목록 번호 제거(자막용).
 
     실제 목록은 1부터 1씩 증가하는 연속 번호. 그 시퀀스를 벗어나는 번호는 가짜로 보고
-    앞 'N.' 마커만 제거(텍스트는 유지). 번호 없는 문장(narration)이 나오면 시퀀스를
-    리셋(새 목록은 다시 1부터). whisper가 목록 모드에 갇혀 5,5,6,7…을 계속 붙이는 환각 대응.
-    추가로 숫자만 남은 세그먼트('20' 등 점 없는 반복 환각)는 통째로 제거.
+    앞 'N.' 마커를 텍스트와 단어 토큰 양쪽에서 제거(텍스트-단어 동기화 유지).
+    번호 없는 문장(narration)이 나오면 시퀀스를 리셋(새 목록은 다시 1부터).
+    숫자만 남은 세그먼트('20' 등 점 없는 반복 환각)는 통째로 비움.
     """
     out = []
     expected = 1  # 다음에 와야 할 '진짜' 번호 (1부터 시작)
     for seg in segments:
         text = seg["text"]
+        words = seg.get("words", [])
         m = _LEAD_NUM.match(text)
         if not m:
             expected = 1  # narration → 새 목록 대기
@@ -143,9 +156,13 @@ def strip_list_numbers(segments):
         else:
             expected = -1  # 시퀀스 이탈 → narration 리셋 전까지 이후 번호도 가짜
             t = _LEAD_NUM.sub("", text, count=1)
+            words = _drop_lead_number_words(words, m.group(1))
         if _NUM_ONLY.match(_norm(t)):  # 숫자만 남은 환각 세그먼트('20' 등) 제거
-            t = ""
-        out.append(seg if t == text else {**seg, "text": t})
+            t, words = "", []
+        if t == text and words is seg.get("words", []):
+            out.append(seg)
+        else:
+            out.append({**seg, "text": t, "words": words})
     return out
 
 
