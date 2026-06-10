@@ -166,27 +166,29 @@ def strip_list_numbers(segments):
     return out
 
 
-def snap_keeps_to_words(keeps, words, fillers=None, margin: float = 0.05):
-    """보존 구간 경계가 단어(잔말 제외) 중간을 자르지 않게 단어 끝/시작까지 확장.
+def compute_keeps_from_words(words, duration, min_silence, pad, min_keep=0.2):
+    """단어 타임스탬프에서 직접 보존(말) 구간 계산 [(s, e)].
 
-    무음 검출이 단어의 약한 끝소리(받침·조사 '가/을/를' 등)를 무음으로 잘못 잡으면
-    말이 끝나기 전에 잘린다. ASR 단어 타임스탬프로 이런 잘림을 보정한다.
-    잔말 단어는 일부러 자르므로 보호 대상에서 제외.
+    단어 사이 간격이 min_silence를 넘으면 컷, 각 구간 양옆에 pad(whisper 끝
+    타임스탬프가 실제보다 약간 이른 것 보정 + 호흡 여유). 에너지(무음) 기반과 달리
+    '사람 말' 자체가 기준이라 숨소리·잡음을 말로 오인하거나 작은 끝소리를
+    무음으로 오인하는 문제가 구조적으로 없다.
     """
-    fillers = DEFAULT_FILLERS if fillers is None else fillers
-    spans = sorted(
-        (w["start"], w["end"]) for w in words if _norm(w["word"]) not in fillers
-    )
-    out = []
-    for ks, ke in keeps:
-        nks, nke = ks, ke
-        for ws, we in spans:
-            if ks <= ws < nke < we:        # 단어가 keep 안에서 시작해 끝을 넘김 → 끝 확장
-                nke = we + margin
-            elif ws < nks < we <= ke:      # 단어가 keep 시작 전 시작 → 시작 당김
-                nks = max(0.0, ws - margin)
-        out.append([nks, nke])
-    return _merge(out)
+    spans = sorted((w["start"], w["end"]) for w in words if w["word"].strip())
+    if not spans:
+        return []
+    regions = [[spans[0][0], spans[0][1]]]
+    for s, e in spans[1:]:
+        if s - regions[-1][1] <= min_silence:
+            regions[-1][1] = max(regions[-1][1], e)
+        else:
+            regions.append([s, e])
+    padded = [
+        (max(0.0, s - pad), min(duration, e + pad))
+        for s, e in regions
+        if (min(duration, e + pad) - max(0.0, s - pad)) >= min_keep
+    ]
+    return [(a, b) for a, b in _merge(padded)]  # pad로 겹친 인접 구간 병합
 
 
 def subtract_cuts(keeps, cuts, min_keep: float = 0.2):

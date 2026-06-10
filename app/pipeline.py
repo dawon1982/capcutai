@@ -6,11 +6,11 @@ from app.asr import transcribe
 from app.draft import build_jumpcut_draft
 from app.probe import probe_media
 from app.script_edit import (
+    compute_keeps_from_words,
     drop_words_in_spans,
     find_filler_cuts,
     find_ng_candidates,
     find_repeat_cuts,
-    snap_keeps_to_words,
     strip_fillers,
     strip_list_numbers,
     subtract_cuts,
@@ -23,9 +23,9 @@ DRAFT_ROOT = os.path.expanduser(
 MIN_STEP_SECONDS = 0.5  # 캐시 hit으로 즉시 끝나도 스테퍼 애니메이션이 보이도록 최소 지연
 
 NOISE_DB = -30.0
-MIN_SILENCE_DEFAULT = 0.3  # 이보다 긴 쉼만 컷(검토 화면 슬라이더로 0.1까지 조절)
+MIN_SILENCE_DEFAULT = 0.3  # 이보다 긴 쉼(단어 간격)만 컷 — 검토 화면 슬라이더로 조절
 MIN_KEEP = 0.2
-KEEP_PAD = 0.1  # 컷 양옆 여유. 단어 잘림은 snap_keeps_to_words가 막으므로 작게(슬라이더 조절)
+KEEP_PAD = 0.15  # 구간 양옆 여유. whisper 단어 끝이 실제보다 약간 이른 것 보정(슬라이더 조절)
 
 
 def safe_draft_name(filename: str) -> str:
@@ -50,17 +50,19 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
     loop = asyncio.get_event_loop()
 
     try:
-        # 1) 무음 검출
+        # 1) 오디오 분석 (probe + 무음 검출 — 무음은 ASR이 단어를 못 찾을 때의 폴백)
         yield {"step": "silence", "status": "running"}
         t0 = loop.time()
         info = await asyncio.to_thread(probe_media, video_path)
         silences = await asyncio.to_thread(
             detect_silence, video_path, noise, min_silence
         )
-        keeps = compute_keep_segments(info["duration"], silences, min_keep, KEEP_PAD)
+        fallback_keeps = compute_keep_segments(
+            info["duration"], silences, min_keep, KEEP_PAD
+        )
         await _pad(t0)
         yield {"step": "silence", "status": "done",
-               "stats": {"n_silence": len(silences), "n_keep": len(keeps)}}
+               "stats": {"n_silence": len(silences)}}
 
         # 2) 음성 인식 (mlx-whisper, 세그먼트+단어)
         yield {"step": "asr", "status": "running"}
@@ -71,13 +73,18 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
         yield {"step": "asr", "status": "done",
                "stats": {"n_segments": len(segments)}}
 
-        # 3) 잔말 컷 + 즉시 반복(말더듬) 자동 컷 + NG 후보(표시만)
+        # 3) 컷 결정: 단어 간격 1차(말 기준) + 잔말·즉시반복 자동 컷 + NG 후보(표시만)
         yield {"step": "filler", "status": "running"}
         t0 = loop.time()
         filler_cuts = find_filler_cuts(segments)
         repeat_cuts = find_repeat_cuts(segments)
         words = [w for s in segments for w in s["words"]]
-        keeps = snap_keeps_to_words(keeps, words)  # 단어 중간 잘림 방지
+        if words:
+            keeps = compute_keeps_from_words(
+                words, info["duration"], min_silence, KEEP_PAD, min_keep
+            )
+        else:
+            keeps = fallback_keeps  # 말이 없는 영상 → 에너지 기반 폴백
         keeps = subtract_cuts(keeps, filler_cuts + repeat_cuts, min_keep)
         ng = find_ng_candidates(segments)
         await _pad(t0)
@@ -100,13 +107,15 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
 
 
 def recompute_keeps(video_path, duration, min_silence, segments, pad=KEEP_PAD):
-    """검토 화면 슬라이더용: ASR 없이 무음 재검출 → 보존 구간 재계산.
-    min_silence=이보다 긴 쉼만 컷, pad=컷 양옆 여유. 초기 분석과 동일하게
-    잔말 컷도 다시 빼준다(슬라이더 조절해도 잔말은 계속 제거)."""
-    silences = detect_silence(video_path, NOISE_DB, min_silence)
-    keeps = compute_keep_segments(duration, silences, MIN_KEEP, pad)
+    """검토 화면 슬라이더용 보존 구간 재계산. 단어 기반이라 ffmpeg 없이 즉시.
+    min_silence=이보다 긴 쉼(단어 간격)만 컷, pad=구간 양옆 여유.
+    잔말·즉시반복 컷도 다시 빼준다(슬라이더 조절과 무관하게 유지)."""
     words = [w for s in segments for w in s["words"]]
-    keeps = snap_keeps_to_words(keeps, words)  # 단어 중간 잘림 방지
+    if words:
+        keeps = compute_keeps_from_words(words, duration, min_silence, pad, MIN_KEEP)
+    else:
+        silences = detect_silence(video_path, NOISE_DB, min_silence)
+        keeps = compute_keep_segments(duration, silences, MIN_KEEP, pad)
     filler_cuts = find_filler_cuts(segments)
     repeat_cuts = find_repeat_cuts(segments)
     return subtract_cuts(keeps, filler_cuts + repeat_cuts, MIN_KEEP)
