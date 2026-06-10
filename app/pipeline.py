@@ -13,10 +13,12 @@ from app.script_edit import (
     find_filler_cuts,
     find_ng_candidates,
     find_repeat_cuts,
+    refine_keeps_with_vad,
     strip_fillers,
     strip_list_numbers,
     subtract_cuts,
 )
+from app.vad import speech_regions
 from app.silence import compute_keep_segments, detect_silence
 
 DRAFT_ROOT = os.path.expanduser(
@@ -57,6 +59,7 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
         t0 = loop.time()
         info = await asyncio.to_thread(probe_media, video_path)
         peaks = await asyncio.to_thread(compute_peaks, video_path)
+        vad = await asyncio.to_thread(speech_regions, video_path)
         silences = await asyncio.to_thread(
             detect_silence, video_path, noise, min_silence
         )
@@ -88,6 +91,9 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
             keeps = compute_keeps_from_words(
                 words, info["duration"], min_silence, KEEP_PAD, min_keep
             )
+            keeps = refine_keeps_with_vad(
+                keeps, words, vad, KEEP_PAD, KEEP_PAD + 0.5
+            )  # 경계를 실제 음성 끝에 맞춤(꼬리 잘림·과잉 여유 동시 해결)
         else:
             keeps = fallback_keeps  # 말이 없는 영상 → 에너지 기반 폴백
         keeps = subtract_cuts(keeps, filler_cuts + repeat_cuts, min_keep)
@@ -109,18 +115,21 @@ async def run_pipeline(video_path: str, opts: dict | None = None):
             "min_silence": min_silence,
             "pad": KEEP_PAD,
             "peaks": peaks,
+            "vad": vad,
         }}
     except Exception as e:
         yield {"step": "error", "status": "error", "message": str(e)}
 
 
-def recompute_keeps(video_path, duration, min_silence, segments, pad=KEEP_PAD):
+def recompute_keeps(video_path, duration, min_silence, segments, pad=KEEP_PAD,
+                    vad=None):
     """검토 화면 슬라이더용 보존 구간 재계산. 단어 기반이라 ffmpeg 없이 즉시.
     min_silence=이보다 긴 쉼(단어 간격)만 컷, pad=구간 양옆 여유.
     잔말·즉시반복 컷도 다시 빼준다(슬라이더 조절과 무관하게 유지)."""
     words = [w for s in segments for w in s["words"]]
     if words:
         keeps = compute_keeps_from_words(words, duration, min_silence, pad, MIN_KEEP)
+        keeps = refine_keeps_with_vad(keeps, words, vad or [], pad, pad + 0.5)
     else:
         silences = detect_silence(video_path, NOISE_DB, min_silence)
         keeps = compute_keep_segments(duration, silences, MIN_KEEP, pad)

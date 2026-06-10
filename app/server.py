@@ -218,7 +218,7 @@ async def reanalyze(job_id: str, payload: dict = Body(...)):
     info = job["analysis"]["info"]
     keeps = await asyncio.to_thread(
         recompute_keeps, job["path"], info["duration"], min_silence,
-        job["analysis"]["segments"], pad,
+        job["analysis"]["segments"], pad, job["analysis"].get("vad"),
     )
     return {"keeps": [[round(s, 3), round(e, 3)] for s, e in keeps]}
 

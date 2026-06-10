@@ -283,6 +283,32 @@ def compute_keeps_from_words(words, duration, min_silence, pad, min_keep=0.2):
     return [(a, b) for a, b in _merge(padded)]  # pad로 겹친 인접 구간 병합
 
 
+def refine_keeps_with_vad(keeps, words, vad, margin: float = 0.06, max_adjust: float = 0.6):
+    """보존 구간 경계를 VAD(실제 음성 에너지) 경계에 맞춰 다듬는다.
+
+    whisper 단어 끝이 실제보다 이르면 끝소리가 잘리고, pad가 과하면 덜 잘린다 —
+    VAD가 들은 실제 음성 끝(+margin)으로 맞추되, 단어 경계 안쪽으로 줄이진 않고
+    max_adjust 이상 벗어나지도 않는다. vad가 비면 무보정.
+    """
+    if not vad:
+        return keeps
+    spans = sorted((w["start"], w["end"]) for w in words if w["word"].strip())
+    out = []
+    for ks, ke in keeps:
+        inside = [(s, e) for s, e in spans if s < ke and e > ks]
+        fw = min((s for s, _ in inside), default=ks)
+        lw = max((e for _, e in inside), default=ke)
+        ns, ne = ks, ke
+        ends = [ve for vs, ve in vad if vs <= lw + 0.2 and ve >= lw - 0.2]
+        if ends:
+            ne = min(max(max(ends) + margin, lw + margin), lw + max_adjust)
+        starts = [vs for vs, ve in vad if vs <= fw + 0.2 and ve >= fw - 0.2]
+        if starts:
+            ns = max(min(min(starts) - margin, fw - margin), fw - max_adjust)
+        out.append((max(0.0, ns), ne))
+    return [(a, b) for a, b in _merge(out)]
+
+
 def subtract_cuts(keeps, cuts, min_keep: float = 0.2):
     """보존 구간에서 컷 구간을 빼고 남는 [(s, e)] 반환. min_keep 미만 조각은 버림."""
     merged = _merge(cuts)
